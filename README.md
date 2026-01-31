@@ -1,53 +1,54 @@
-# Diagram App
 
-Professional diagramming tool for seamless collaboration. Visualize ideas, create flowcharts, and collaborate in real-time.
+# Diagram App (Диаграммное приложение)
 
-## 🚀 Features
+Профессиональный инструмент для создания диаграмм и совместной работы. Визуализируйте идеи, стройте блок-схемы и работайте в команде в реальном времени.
 
-- **Real-time Collaboration**: Work with your team on the same diagram instantly.
-- **Modern UI**: Dark glassmorphism design with intuitive controls.
-- **Cross-Platform**: Available for Windows, macOS, and Linux (and Web).
-- **Secure**: Projects are private by default.
-- **Offline Capable**: Works offline with local storage (Desktop version).
+## 🚀 Возможности
 
-## 🛠 Build Instructions
+- **Совместная работа в реальном времени**: Редактируйте одну диаграмму вместе с коллегами.
+- **Современный интерфейс**: Дизайн в стиле glassmorphism, интуитивное управление.
+- **Кроссплатформенность**: Windows, macOS, Linux и Web-версия.
+- **Безопасность**: Проекты по умолчанию приватные.
+- **Оффлайн-режим**: Работает без интернета с локальным хранилищем (десктоп-версия).
 
-### Prerequisites
-- Node.js (Latest LTS recommended)
-- Go (for backend)
-- Docker (optional, for containerization)
+## 🛠 Инструкция по сборке
 
-### Installing Dependencies
+### Необходимое ПО
+- Node.js (рекомендуется последняя LTS)
+- Go (для backend)
+- Docker (опционально, для контейнеризации)
+
+### Установка зависимостей
 
 ```bash
 npm install
 cd landing && npm install
 ```
 
-### Desktop App (Electron)
+### Десктоп-приложение (Electron)
 
-Build for Windows (Portable):
+Сборка для Windows (Portable):
 ```bash
 npm run electron:build:win
 ```
-*Artifacts will be in `release-v5/`.*
+*Готовые файлы будут в папке `release-v5/`.*
 
-### Landing Page
+### Лендинг (Landing Page)
 
 ```bash
 cd landing
-npm run dev   # Development
-npm run build # Production
+npm run dev   # Режим разработки
+npm run build # Продакшн-сборка
 ```
 
-## 🌍 Release & Deployment
+## 🌍 Релиз и деплой
 
-1. **Create Tag**: `git tag v1.0.0` and `git push origin v1.0.0`.
-2. **GitHub Releases**: Create a release for tag `v1.0.0` and upload the `.zip` from `release-v5/`.
-   - The link is pre-configured to: `https://github.com/Sunder32/Whatever/releases/download/v1.0.0/Diagram-App-1.0.0-Windows-Portable.zip`.
-3. **Landing Page**: Deploy `landing/dist` to Vercel/Netlify/GitHub Pages.
+1. **Создать тег**: `git tag v1.0.0` и `git push origin v1.0.0`.
+2. **GitHub Releases**: Создать релиз для тега `v1.0.0` и загрузить `.zip` из `release-v5/`.
+   - Ссылка заранее настроена: `https://github.com/Sunder32/Whatever/releases/download/v1.0.0/Diagram-App-1.0.0-Windows-Portable.zip`.
+3. **Лендинг**: Задеплойте `landing/dist` на Vercel/Netlify/GitHub Pages.
 
-## 📄 License
+## 📄 Лицензия
 
-See [LICENSE.md](LICENSE.md)
-# Diagram-app
+См. [LICENSE.md](LICENSE.md)
+

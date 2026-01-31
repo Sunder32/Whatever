@@ -1,4 +1,4 @@
-import { apiClient } from './client'
+import { apiClient, API_BASE_URL } from './client'
 import type { WtvFile } from '@/types'
 import axios from 'axios'
 
@@ -45,8 +45,7 @@ export const exportApi = {
       }
     }
 
-    // Use axios directly for blob response type
-    const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api/v1' : 'http://localhost:9000/api/v1')
+    // Use axios directly for blob response type with centralized base URL
     const response = await axios.post(`${API_BASE_URL}/export`, requestData, {
       responseType: 'blob',
       headers: {

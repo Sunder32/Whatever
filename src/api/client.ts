@@ -1,7 +1,15 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-// Use relative URL in production, localhost in development
-const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api/v1' : 'http://localhost:9000/api/v1')
+// Production server URL (VPS IP)
+const SERVER_URL = 'http://31.129.106.149/api/v1'
+
+// Check if running in Electron (via exposed context bridge in preload)
+const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI
+
+// Use absolute URL for Electron Production, relative for Web Production, localhost for Dev
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 
+  (isElectron && import.meta.env.PROD ? SERVER_URL : 
+  (import.meta.env.PROD ? '/api/v1' : 'http://localhost:9000/api/v1'))
 
 export interface ApiResponse<T = unknown> {
   success: boolean
