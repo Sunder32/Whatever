@@ -1,0 +1,9 @@
+﻿# Large build artifacts
+release/
+release-*/
+release-build/
+electron-cache/
+*.zip
+*.asar
+node_modules/
+dist/

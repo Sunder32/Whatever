@@ -1,0 +1,8 @@
+export { Workspace, type WorkspaceView } from './Workspace'
+export { DashboardView } from './DashboardView'
+export { ProjectsView } from './ProjectsView'
+export { ProfileView } from './ProfileView'
+export { EditorView } from './EditorView'
+export { SettingsView } from './SettingsView'
+export { NotificationsView } from './NotificationsView'
+export { UsersSearchView } from './UsersSearchView'

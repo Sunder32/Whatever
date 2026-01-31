@@ -1,0 +1,85 @@
+/**
+ * SVG Icon for Windows app icon (1024x1024)
+ * This will be converted to .ico format using an icon converter
+ * Save this as icon.svg and convert using: https://convertio.co/svg-ico/
+ */
+
+const ICON_SVG = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#1a1a2e"/>
+      <stop offset="100%" style="stop-color:#16213e"/>
+    </linearGradient>
+    <linearGradient id="accentGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6"/>
+      <stop offset="100%" style="stop-color:#8b5cf6"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="20" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="200" fill="url(#bgGradient)"/>
+  
+  <!-- Grid pattern (subtle) -->
+  <g opacity="0.1" stroke="#3b82f6" stroke-width="1">
+    <line x1="256" y1="100" x2="256" y2="924"/>
+    <line x1="512" y1="100" x2="512" y2="924"/>
+    <line x1="768" y1="100" x2="768" y2="924"/>
+    <line x1="100" y1="256" x2="924" y2="256"/>
+    <line x1="100" y1="512" x2="924" y2="512"/>
+    <line x1="100" y1="768" x2="924" y2="768"/>
+  </g>
+  
+  <!-- Main diagram elements -->
+  <g filter="url(#glow)">
+    <!-- Node 1 (top left) -->
+    <rect x="200" y="250" width="180" height="100" rx="16" fill="url(#accentGradient)" opacity="0.9"/>
+    
+    <!-- Node 2 (top right) -->
+    <rect x="644" y="250" width="180" height="100" rx="16" fill="#8b5cf6" opacity="0.9"/>
+    
+    <!-- Node 3 (bottom center) -->
+    <rect x="422" y="650" width="180" height="100" rx="16" fill="#10b981" opacity="0.9"/>
+    
+    <!-- Diamond (center) -->
+    <polygon points="512,420 592,500 512,580 432,500" fill="#f59e0b" opacity="0.9"/>
+  </g>
+  
+  <!-- Connection lines -->
+  <g stroke="url(#accentGradient)" stroke-width="4" fill="none" opacity="0.8">
+    <!-- Top left to diamond -->
+    <path d="M 290 350 Q 290 450 432 500"/>
+    <!-- Top right to diamond -->
+    <path d="M 734 350 Q 734 450 592 500"/>
+    <!-- Diamond to bottom -->
+    <path d="M 512 580 L 512 650"/>
+  </g>
+  
+  <!-- Arrow heads -->
+  <g fill="url(#accentGradient)" opacity="0.8">
+    <polygon points="432,500 442,490 442,510" transform="rotate(-45, 432, 500)"/>
+    <polygon points="592,500 582,490 582,510" transform="rotate(45, 592, 500)"/>
+    <polygon points="512,650 502,640 522,640"/>
+  </g>
+  
+  <!-- Text placeholders (lines) -->
+  <g fill="#ffffff" opacity="0.7">
+    <rect x="230" y="290" width="120" height="8" rx="4"/>
+    <rect x="250" y="310" width="80" height="6" rx="3"/>
+    
+    <rect x="674" y="290" width="120" height="8" rx="4"/>
+    <rect x="694" y="310" width="80" height="6" rx="3"/>
+    
+    <rect x="452" y="690" width="120" height="8" rx="4"/>
+    <rect x="472" y="710" width="80" height="6" rx="3"/>
+  </g>
+</svg>`;
+
+export default ICON_SVG;
