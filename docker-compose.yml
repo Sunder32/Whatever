@@ -45,13 +45,15 @@ services:
     container_name: diagram-backend
     environment:
       PORT: "9000"
+      # ВАЖНО: Убедитесь, что пароль здесь совпадает с паролем в сервисе postgres
       DATABASE_URL: "postgresql://${POSTGRES_USER:-diagram}:${POSTGRES_PASSWORD:-diagram_secret}@postgres:5432/${POSTGRES_DB:-diagram_db}?sslmode=disable"
       REDIS_ADDRESS: redis:6379
       JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
       JWT_EXPIRATION: 24h
       REFRESH_TOKEN_EXPIRATION: 168h
       PYTHON_SERVICE_URL: http://python-service:5000
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost"
+      # ИСПРАВЛЕНО: Добавлен IP сервера для разрешения CORS запросов
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://localhost,http://31.129.106.149"
       GIN_MODE: release
       MIGRATIONS_DIR: /app/migrations
     volumes:
@@ -120,7 +122,8 @@ services:
     container_name: diagram-frontend
     environment:
       NODE_ENV: production
-      VITE_API_URL: http://backend:9000/api/v1
+      # ИСПРАВЛЕНО: Используем относительный путь, чтобы запрос шел через Nginx (порт 80)
+      VITE_API_URL: /api/v1
     ports:
       - "3000:3000"
     depends_on:

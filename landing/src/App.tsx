@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 
 // Configuration
-const DOWNLOAD_URL = 'https://github.com/Sunder32/Whatever/releases/download/v1.0.0/Diagram-App-1.0.0-Windows-Portable.zip'
+const DOWNLOAD_URL = 'https://github.com/Sunder32/Whatever/releases/download/exe/release-build.zip'
 const GITHUB_URL = 'https://github.com/Sunder32/Whatever'
 const APP_VERSION = '1.0.0'
 
