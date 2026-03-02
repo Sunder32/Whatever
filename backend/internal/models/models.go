@@ -10,6 +10,7 @@ type User struct {
 	ID            uuid.UUID              `json:"id" db:"id"`
 	Email         string                 `json:"email" db:"email"`
 	PasswordHash  string                 `json:"-" db:"password_hash"`
+	Username      string                 `json:"username" db:"username"`
 	Name          string                 `json:"name" db:"name"`
 	Avatar        *string                `json:"avatar" db:"avatar"`
 	Role          string                 `json:"role" db:"role"`
@@ -23,6 +24,9 @@ type User struct {
 
 // Alias fields for API compatibility
 func (u *User) GetUsername() string {
+	if u.Username != "" {
+		return u.Username
+	}
 	return u.Name
 }
 

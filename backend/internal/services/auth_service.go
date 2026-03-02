@@ -81,6 +81,7 @@ func (s *AuthService) Register(ctx context.Context, username, email, password, f
 	user := &models.User{
 		Email:        email,
 		PasswordHash: string(hashedPassword),
+		Username:     username,
 		Name:         name,
 		Role:         "user",
 		Settings: map[string]interface{}{
@@ -185,7 +186,7 @@ func (s *AuthService) generateTokens(user *models.User) (*TokenPair, error) {
 
 	accessClaims := &Claims{
 		UserID:    user.ID,
-		Username:  user.Name,
+		Username:  user.Username,
 		Email:     user.Email,
 		Role:      user.Role,
 		TokenType: "access",
@@ -207,7 +208,7 @@ func (s *AuthService) generateTokens(user *models.User) (*TokenPair, error) {
 	refreshExpiresAt := now.Add(7 * 24 * time.Hour)
 	refreshClaims := &Claims{
 		UserID:    user.ID,
-		Username:  user.Name,
+		Username:  user.Username,
 		Email:     user.Email,
 		Role:      user.Role,
 		TokenType: "refresh",

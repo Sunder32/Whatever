@@ -184,7 +184,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"id":          user.ID.String(),
-			"username":    user.Name,
+			"username":    user.Username,
 			"email":       user.Email,
 			"fullName":    user.Name,
 			"avatarUrl":   user.Avatar,
@@ -230,7 +230,7 @@ func (h *UserHandler) Search(c *gin.Context) {
 	for _, user := range users {
 		response = append(response, UserResponse{
 			ID:        user.ID.String(),
-			Username:  user.Name,
+			Username:  user.Username,
 			FullName:  user.Name,
 			AvatarURL: user.Avatar,
 		})
@@ -288,7 +288,7 @@ func (h *UserHandler) GetSuggested(c *gin.Context) {
 	for _, user := range users {
 		response = append(response, UserResponse{
 			ID:        user.ID.String(),
-			Username:  user.Name,
+			Username:  user.Username,
 			FullName:  user.Name,
 			AvatarURL: user.Avatar,
 		})
@@ -344,7 +344,7 @@ func (h *UserHandler) GetByUsername(c *gin.Context) {
 
 	response := UserProfileResponse{
 		ID:             user.ID.String(),
-		Username:       user.Name,
+		Username:       user.Username,
 		FullName:       user.Name,
 		AvatarURL:      user.Avatar,
 		ProjectsCount:  projectsCount,
@@ -416,7 +416,7 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 
 	response := UserProfileResponse{
 		ID:             user.ID.String(),
-		Username:       user.Name,
+		Username:       user.Username,
 		FullName:       user.Name,
 		AvatarURL:      user.Avatar,
 		ProjectsCount:  projectsCount,

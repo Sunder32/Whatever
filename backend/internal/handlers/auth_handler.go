@@ -124,7 +124,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		"data": gin.H{
 			"user": gin.H{
 				"id":       user.ID,
-				"username": user.Name,
+				"username": user.Username,
 				"email":    user.Email,
 				"fullName": user.Name,
 			},
@@ -163,7 +163,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		"data": gin.H{
 			"user": gin.H{
 				"id":          user.ID,
-				"username":    user.Name,
+				"username":    user.Username,
 				"email":       user.Email,
 				"fullName":    user.Name,
 				"avatarUrl":   user.Avatar,
@@ -268,7 +268,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"id":             user.ID,
-			"username":       user.Name,
+			"username":       user.Username,
 			"email":          user.Email,
 			"fullName":       user.Name,
 			"avatarUrl":      user.Avatar,
@@ -333,7 +333,7 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"id":          user.ID,
-			"username":    user.Name,
+			"username":    user.Username,
 			"email":       user.Email,
 			"fullName":    user.Name,
 			"avatarUrl":   user.Avatar,

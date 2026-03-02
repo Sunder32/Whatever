@@ -35,15 +35,16 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 
 	query := `
 		INSERT INTO users (
-			id, email, password_hash, name, avatar, role,
+			id, email, password_hash, username, name, avatar, role,
 			settings, email_verified, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 	`
 
 	_, err = r.pool.Exec(ctx, query,
 		user.ID,
 		user.Email,
 		user.PasswordHash,
+		user.Username,
 		user.Name,
 		user.Avatar,
 		user.Role,
@@ -58,7 +59,7 @@ func (r *UserRepository) Create(ctx context.Context, user *models.User) error {
 
 func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	query := `
-		SELECT id, email, password_hash, name, avatar, role,
+		SELECT id, email, password_hash, username, name, avatar, role,
 			   settings, email_verified, last_login_at, created_at, updated_at
 		FROM users WHERE id = $1 AND deleted_at IS NULL
 	`
@@ -70,6 +71,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Use
 		&user.ID,
 		&user.Email,
 		&user.PasswordHash,
+		&user.Username,
 		&user.Name,
 		&user.Avatar,
 		&user.Role,
@@ -92,7 +94,7 @@ func (r *UserRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Use
 
 func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	query := `
-		SELECT id, email, password_hash, name, avatar, role,
+		SELECT id, email, password_hash, username, name, avatar, role,
 			   settings, email_verified, last_login_at, created_at, updated_at
 		FROM users WHERE email = $1 AND deleted_at IS NULL
 	`
@@ -104,6 +106,7 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 		&user.ID,
 		&user.Email,
 		&user.PasswordHash,
+		&user.Username,
 		&user.Name,
 		&user.Avatar,
 		&user.Role,
@@ -125,11 +128,10 @@ func (r *UserRepository) GetByEmail(ctx context.Context, email string) (*models.
 }
 
 func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*models.User, error) {
-	// Map username to name column
 	query := `
-		SELECT id, email, password_hash, name, avatar, role,
+		SELECT id, email, password_hash, username, name, avatar, role,
 			   settings, email_verified, last_login_at, created_at, updated_at
-		FROM users WHERE name = $1 AND deleted_at IS NULL
+		FROM users WHERE username = $1 AND deleted_at IS NULL
 	`
 
 	var user models.User
@@ -139,6 +141,7 @@ func (r *UserRepository) GetByUsername(ctx context.Context, username string) (*m
 		&user.ID,
 		&user.Email,
 		&user.PasswordHash,
+		&user.Username,
 		&user.Name,
 		&user.Avatar,
 		&user.Role,
@@ -170,19 +173,21 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 	query := `
 		UPDATE users SET
 			email = $2,
-			name = $3,
-			avatar = $4,
-			role = $5,
-			settings = $6,
-			email_verified = $7,
-			password_hash = $8,
-			updated_at = $9
+			username = $3,
+			name = $4,
+			avatar = $5,
+			role = $6,
+			settings = $7,
+			email_verified = $8,
+			password_hash = $9,
+			updated_at = $10
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
 	_, err = r.pool.Exec(ctx, query,
 		user.ID,
 		user.Email,
+		user.Username,
 		user.Name,
 		user.Avatar,
 		user.Role,
@@ -216,8 +221,7 @@ func (r *UserRepository) ExistsByEmail(ctx context.Context, email string) (bool,
 }
 
 func (r *UserRepository) ExistsByUsername(ctx context.Context, username string) (bool, error) {
-	// Map username to name column
-	query := `SELECT EXISTS(SELECT 1 FROM users WHERE name = $1 AND deleted_at IS NULL)`
+	query := `SELECT EXISTS(SELECT 1 FROM users WHERE username = $1 AND deleted_at IS NULL)`
 	var exists bool
 	err := r.pool.QueryRow(ctx, query, username).Scan(&exists)
 	return exists, err
@@ -230,11 +234,11 @@ func (r *UserRepository) Search(ctx context.Context, query string, limit int) ([
 	}
 
 	sqlQuery := `
-		SELECT id, email, password_hash, name, avatar, role,
+		SELECT id, email, password_hash, username, name, avatar, role,
 			   settings, email_verified, last_login_at, created_at, updated_at
 		FROM users 
 		WHERE deleted_at IS NULL 
-			AND (LOWER(name) LIKE LOWER($1) OR LOWER(email) LIKE LOWER($1))
+			AND (LOWER(name) LIKE LOWER($1) OR LOWER(email) LIKE LOWER($1) OR LOWER(username) LIKE LOWER($1))
 		ORDER BY name
 		LIMIT $2
 	`
@@ -255,6 +259,7 @@ func (r *UserRepository) Search(ctx context.Context, query string, limit int) ([
 			&user.ID,
 			&user.Email,
 			&user.PasswordHash,
+			&user.Username,
 			&user.Name,
 			&user.Avatar,
 			&user.Role,
@@ -294,7 +299,7 @@ func (r *UserRepository) GetFollowers(ctx context.Context, userID uuid.UUID, lim
 
 	// Get follower users
 	sqlQuery := `
-		SELECT u.id, u.email, u.password_hash, u.name, u.avatar, u.role,
+		SELECT u.id, u.email, u.password_hash, u.username, u.name, u.avatar, u.role,
 			   u.settings, u.email_verified, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		INNER JOIN user_followers uf ON u.id = uf.follower_id
@@ -318,6 +323,7 @@ func (r *UserRepository) GetFollowers(ctx context.Context, userID uuid.UUID, lim
 			&user.ID,
 			&user.Email,
 			&user.PasswordHash,
+			&user.Username,
 			&user.Name,
 			&user.Avatar,
 			&user.Role,
@@ -357,7 +363,7 @@ func (r *UserRepository) GetFollowing(ctx context.Context, userID uuid.UUID, lim
 
 	// Get followed users
 	sqlQuery := `
-		SELECT u.id, u.email, u.password_hash, u.name, u.avatar, u.role,
+		SELECT u.id, u.email, u.password_hash, u.username, u.name, u.avatar, u.role,
 			   u.settings, u.email_verified, u.last_login_at, u.created_at, u.updated_at
 		FROM users u
 		INNER JOIN user_followers uf ON u.id = uf.following_id
@@ -381,6 +387,7 @@ func (r *UserRepository) GetFollowing(ctx context.Context, userID uuid.UUID, lim
 			&user.ID,
 			&user.Email,
 			&user.PasswordHash,
+			&user.Username,
 			&user.Name,
 			&user.Avatar,
 			&user.Role,
@@ -430,7 +437,7 @@ func (r *UserRepository) GetSuggested(ctx context.Context, userID uuid.UUID, lim
 
 	// Get users that are not the current user, ordered by most recent activity
 	sqlQuery := `
-		SELECT id, email, password_hash, name, avatar, role,
+		SELECT id, email, password_hash, username, name, avatar, role,
 			   settings, email_verified, last_login_at, created_at, updated_at
 		FROM users 
 		WHERE deleted_at IS NULL AND id != $1
@@ -453,6 +460,7 @@ func (r *UserRepository) GetSuggested(ctx context.Context, userID uuid.UUID, lim
 			&user.ID,
 			&user.Email,
 			&user.PasswordHash,
+			&user.Username,
 			&user.Name,
 			&user.Avatar,
 			&user.Role,

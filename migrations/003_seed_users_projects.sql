@@ -3,13 +3,13 @@
 
 -- Create test users with properly formatted UUIDs
 -- Password for all users: password123 (bcrypt hash with cost 12)
-INSERT INTO users (id, email, password_hash, name, avatar, role, settings, email_verified, created_at, updated_at)
+INSERT INTO users (id, email, password_hash, username, name, avatar, role, settings, email_verified, created_at, updated_at)
 VALUES 
-    ('a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'admin@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'Администратор', NULL, 'admin', '{"theme": "dark", "language": "ru"}', true, NOW() - INTERVAL '90 days', NOW()),
-    ('b2c3d4e5-f6a7-8901-bcde-f12345678901', 'designer@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'Дизайнер Иванов', NULL, 'user', '{"theme": "light", "language": "ru"}', true, NOW() - INTERVAL '60 days', NOW()),
-    ('c3d4e5f6-a7b8-9012-cdef-123456789012', 'developer@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'Разработчик Петров', NULL, 'user', '{"theme": "dark", "language": "ru"}', true, NOW() - INTERVAL '45 days', NOW()),
-    ('d4e5f6a7-b8c9-0123-def0-234567890123', 'manager@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'Менеджер Сидорова', NULL, 'user', '{"theme": "light", "language": "ru"}', true, NOW() - INTERVAL '30 days', NOW()),
-    ('e5f6a7b8-c9d0-1234-ef01-345678901234', 'analyst@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'Аналитик Козлов', NULL, 'user', '{"theme": "dark", "language": "ru"}', true, NOW() - INTERVAL '15 days', NOW())
+    ('a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'admin@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'admin', 'Администратор', NULL, 'admin', '{"theme": "dark", "language": "ru"}', true, NOW() - INTERVAL '90 days', NOW()),
+    ('b2c3d4e5-f6a7-8901-bcde-f12345678901', 'designer@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'designer', 'Дизайнер Иванов', NULL, 'user', '{"theme": "light", "language": "ru"}', true, NOW() - INTERVAL '60 days', NOW()),
+    ('c3d4e5f6-a7b8-9012-cdef-123456789012', 'developer@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'developer', 'Разработчик Петров', NULL, 'user', '{"theme": "dark", "language": "ru"}', true, NOW() - INTERVAL '45 days', NOW()),
+    ('d4e5f6a7-b8c9-0123-def0-234567890123', 'manager@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'manager', 'Менеджер Сидорова', NULL, 'user', '{"theme": "light", "language": "ru"}', true, NOW() - INTERVAL '30 days', NOW()),
+    ('e5f6a7b8-c9d0-1234-ef01-345678901234', 'analyst@example.com', '$2a$12$WHqaoe6.fnJT6tnldWGUrOqEsEWiEuEoGQUy0cn8tgP2awk0a27aW', 'analyst', 'Аналитик Козлов', NULL, 'user', '{"theme": "dark", "language": "ru"}', true, NOW() - INTERVAL '15 days', NOW())
 ON CONFLICT (email) DO NOTHING;
 
 -- Create sample projects
