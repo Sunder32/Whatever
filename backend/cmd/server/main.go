@@ -201,7 +201,7 @@ func main() {
 		}
 	}
 
-	router.GET("/ws", authMiddleware.Authenticate(), wsHandler.HandleConnection)
+	router.GET("/ws", authMiddleware.WebSocketAuth(), wsHandler.HandleConnection)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.Port,
