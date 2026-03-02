@@ -1,9 +1,10 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, computed_field
 from typing import Optional
 from functools import lru_cache
 import tempfile
 import os
+import json
 
 
 class Settings(BaseSettings):
@@ -54,15 +55,29 @@ class Settings(BaseSettings):
     export_max_height: int = 8192
     export_default_dpi: int = 150
     
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:9000"]
+    cors_origins_raw: str = Field(
+        default="http://localhost:3000,http://localhost:9000",
+        alias="CORS_ORIGINS"
+    )
     cors_allow_credentials: bool = True
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def parse_cors_origins(cls, v):
-        if isinstance(v, str):
-            return [origin.strip() for origin in v.split(",") if origin.strip()]
-        return v
+    @computed_field
+    @property
+    def cors_origins(self) -> list[str]:
+        raw = self.cors_origins_raw
+        if not raw or not raw.strip():
+            return ["http://localhost:3000"]
+        # Try JSON array first
+        stripped = raw.strip()
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    return [s.strip() for s in parsed if s.strip()]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        # Fallback: comma-separated
+        return [origin.strip() for origin in raw.split(",") if origin.strip()]
     
     log_level: str = "INFO"
     log_format: str = "json"
