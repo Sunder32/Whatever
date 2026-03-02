@@ -201,17 +201,29 @@ class WebSocketService {
     return () => this.disconnectionHandlers.delete(handler)
   }
 
-  // Schema-specific methods
+  // Schema-specific methods (reference-counted to support multiple hooks)
+  private schemaRefCounts: Map<string, number> = new Map()
+
   joinSchema(schemaId: string) {
-    this.currentSchemaId = schemaId
-    this.send('join_room', { room: `schema:${schemaId}` })
+    const count = this.schemaRefCounts.get(schemaId) || 0
+    this.schemaRefCounts.set(schemaId, count + 1)
+    if (count === 0) {
+      this.currentSchemaId = schemaId
+      this.send('join_room', { room: `schema:${schemaId}` })
+    }
   }
 
   leaveSchema(schemaId: string) {
-    if (this.currentSchemaId === schemaId) {
-      this.currentSchemaId = null
+    const count = this.schemaRefCounts.get(schemaId) || 0
+    if (count <= 1) {
+      this.schemaRefCounts.delete(schemaId)
+      if (this.currentSchemaId === schemaId) {
+        this.currentSchemaId = null
+      }
+      this.send('leave_room', { room: `schema:${schemaId}` })
+    } else {
+      this.schemaRefCounts.set(schemaId, count - 1)
     }
-    this.send('leave_room', { room: `schema:${schemaId}` })
   }
 
   // Cursor updates for real-time collaboration

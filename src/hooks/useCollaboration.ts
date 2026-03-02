@@ -17,6 +17,8 @@ interface UseCollaborationOptions {
   enabled?: boolean
   onCursorUpdate?: (cursors: Map<string, Cursor>) => void
   onElementUpdate?: (elementId: string, changes: Record<string, unknown>) => void
+  onElementCreate?: (data: Record<string, unknown>) => void
+  onElementDelete?: (data: Record<string, unknown>) => void
   onUserJoin?: (userId: string, userName: string) => void
   onUserLeave?: (userId: string) => void
 }
@@ -30,6 +32,8 @@ export function useCollaboration(options: UseCollaborationOptions) {
     enabled = true,
     onCursorUpdate,
     onElementUpdate,
+    onElementCreate,
+    onElementDelete,
     onUserJoin,
     onUserLeave,
   } = options
@@ -67,6 +71,18 @@ export function useCollaboration(options: UseCollaborationOptions) {
       }
     })
 
+    // Listen for element creation from backend (type: element_create)
+    const unsubCreate = webSocketService.on('element_create', (data: unknown) => {
+      const payload = data as Record<string, unknown>
+      onElementCreate?.(payload)
+    })
+
+    // Listen for element deletion from backend (type: element_delete)
+    const unsubDelete = webSocketService.on('element_delete', (data: unknown) => {
+      const payload = data as Record<string, unknown>
+      onElementDelete?.(payload)
+    })
+
     // Listen for user join/leave from backend (type: user_joined / user_left)
     const unsubJoin = webSocketService.on('user_joined', (data: unknown) => {
       const { userId: joinedUserId, userName: joinedUserName } = data as { userId: string; userName: string }
@@ -80,7 +96,7 @@ export function useCollaboration(options: UseCollaborationOptions) {
       onUserLeave?.(leftUserId)
     })
 
-    cleanupRef.current = [unsubCursor, unsubElement, unsubJoin, unsubLeave]
+    cleanupRef.current = [unsubCursor, unsubElement, unsubCreate, unsubDelete, unsubJoin, unsubLeave]
 
     // Cleanup stale cursors every 5 seconds
     const cleanupInterval = setInterval(() => {
@@ -104,7 +120,7 @@ export function useCollaboration(options: UseCollaborationOptions) {
       cleanupRef.current.forEach(fn => fn())
       clearInterval(cleanupInterval)
     }
-  }, [enabled, schemaId, userId, userName, userColor, onCursorUpdate, onElementUpdate, onUserJoin, onUserLeave])
+  }, [enabled, schemaId, userId, userName, userColor, onCursorUpdate, onElementUpdate, onElementCreate, onElementDelete, onUserJoin, onUserLeave])
 
   const sendCursorPosition = useCallback((position: { x: number; y: number }) => {
     if (!enabled || !schemaId) return

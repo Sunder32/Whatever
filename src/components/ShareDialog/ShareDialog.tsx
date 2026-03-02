@@ -184,7 +184,20 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
   }, [file, user])
   
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(shareLink)
+    // navigator.clipboard is undefined on non-HTTPS origins
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(shareLink)
+    } else {
+      // Fallback for HTTP: use a temporary textarea
+      const ta = document.createElement('textarea')
+      ta.value = shareLink
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }

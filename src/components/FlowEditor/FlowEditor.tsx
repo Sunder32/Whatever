@@ -85,30 +85,20 @@ function FlowEditorInner({ readOnly = false, projectId }: FlowEditorProps) {
   const [currentViewport, setCurrentViewport] = useState({ x: 0, y: 0, zoom: 1 })
   const lastCursorSend = useRef(0)
   
-  // Collaboration handlers
+  // Collaboration handlers — only cursors (element sync is handled by EditorViewNew)
   const handleCursorUpdate = useCallback((cursors: Map<string, { userId: string; userName: string; color: string; position: { x: number; y: number }; lastUpdate: number }>) => {
     setRemoteCursors(new Map(cursors))
   }, [])
   
-  const handleRemoteElementUpdate = useCallback((elementId: string, changes: Record<string, unknown>) => {
-    if (changes.position) {
-      useGraphStore.getState().updateNodePosition(elementId, changes.position as { x: number; y: number })
-    } else {
-      useGraphStore.getState().updateNode(elementId, changes as Record<string, unknown>)
-    }
-  }, [])
-  
-  // Collaboration hook
+  // Collaboration hook — cursor-only (no onElementUpdate to avoid duplicate handling)
   const {
     sendCursorPosition,
-    sendElementUpdate,
   } = useCollaboration({
     schemaId: projectId || null,
     userId: user?.id || '',
     userName: user?.fullName || user?.username || 'Anonymous',
     enabled: !readOnly && !!user,
     onCursorUpdate: handleCursorUpdate,
-    onElementUpdate: handleRemoteElementUpdate,
   })
   
   // Throttled cursor position send on mouse move
@@ -122,16 +112,10 @@ function FlowEditorInner({ readOnly = false, projectId }: FlowEditorProps) {
     sendCursorPosition(flowPos)
   }, [readOnly, user, screenToFlowPosition, sendCursorPosition])
   
-  // Wrap onNodesChange to broadcast position changes on drag end
+  // Wrap onNodesChange — position broadcasts are handled by EditorViewNew's store subscription
   const handleNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
     onNodesChange(changes)
-    
-    for (const change of changes) {
-      if (change.type === 'position' && !change.dragging && change.position) {
-        sendElementUpdate(change.id, { position: change.position })
-      }
-    }
-  }, [onNodesChange, sendElementUpdate])
+  }, [onNodesChange])
   
   // Track viewport for cursor rendering
   const handleViewportChange = useCallback((_e: unknown, vp: { x: number; y: number; zoom: number }) => {

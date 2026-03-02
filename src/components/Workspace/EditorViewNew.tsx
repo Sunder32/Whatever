@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { 
   ArrowLeft, 
   Save, 
@@ -29,10 +29,11 @@ import {
 import { FlowEditor } from '@/components/FlowEditor'
 import { useDiagramStore, useAppStore, useProjectStore, useGraphStore, useAuthStore } from '@/stores'
 import { useTheme, useOnlineStatus, useKeyboardShortcuts, useAutoSave, useCollaboration } from '@/hooks'
-import { storageService } from '@/services'
+import { storageService, webSocketService } from '@/services'
 import { cn } from '@/utils'
 import { type TemplateType, getTemplateById } from '@/utils/diagramTemplates'
 import { syncFlowToWtvFile } from '@/utils/diagramAdapter'
+import type { FlowNode, FlowEdge } from '@/stores/graphStore'
 
 interface EditorViewProps {
   projectId: string | null
@@ -70,21 +71,72 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
   const [onlineUsers, setOnlineUsers] = useState<string[]>([])
   const currentUser = useAuthStore(state => state.user)
   
+  // Flag to prevent echo: when applying remote changes, skip broadcasting them back
+  const isRemoteRef = useRef(false)
+  
   // Realtime collaboration via WebSocket
   const handleElementUpdate = useCallback((elementId: string, changes: Record<string, unknown>) => {
-    const { nodes } = useGraphStore.getState()
-    const existingNode = nodes.find(n => n.id === elementId)
-    if (existingNode) {
-      // Apply position changes
-      if (changes.position) {
-        useGraphStore.getState().updateNodePosition(elementId, changes.position as { x: number; y: number })
+    isRemoteRef.current = true
+    try {
+      const { nodes } = useGraphStore.getState()
+      const existingNode = nodes.find(n => n.id === elementId)
+      if (existingNode) {
+        if (changes.position) {
+          useGraphStore.getState().updateNodePosition(elementId, changes.position as { x: number; y: number })
+        }
+        const dataChanges = { ...changes }
+        delete dataChanges.position
+        if (Object.keys(dataChanges).length > 0) {
+          useGraphStore.getState().updateNode(elementId, dataChanges as any)
+        }
       }
-      // Apply data changes
-      const dataChanges = { ...changes }
-      delete dataChanges.position
-      if (Object.keys(dataChanges).length > 0) {
-        useGraphStore.getState().updateNode(elementId, dataChanges as any)
+    } finally {
+      isRemoteRef.current = false
+    }
+  }, [])
+
+  // Handle remote element creation (new nodes / new edges from other users)
+  const handleRemoteCreate = useCallback((data: Record<string, unknown>) => {
+    isRemoteRef.current = true
+    try {
+      if (data.node) {
+        const node = data.node as FlowNode
+        const { nodes } = useGraphStore.getState()
+        if (!nodes.find(n => n.id === node.id)) {
+          useGraphStore.setState({ nodes: [...nodes, node] })
+        }
       }
+      if (data.edge) {
+        const edge = data.edge as FlowEdge
+        const { edges } = useGraphStore.getState()
+        if (!edges.find(e => e.id === edge.id)) {
+          useGraphStore.setState({ edges: [...edges, edge] })
+        }
+      }
+    } finally {
+      isRemoteRef.current = false
+    }
+  }, [])
+
+  // Handle remote element deletion
+  const handleRemoteDelete = useCallback((data: Record<string, unknown>) => {
+    isRemoteRef.current = true
+    try {
+      if (data.elementId) {
+        const id = data.elementId as string
+        const { nodes, edges } = useGraphStore.getState()
+        useGraphStore.setState({
+          nodes: nodes.filter(n => n.id !== id),
+          edges: edges.filter(e => e.source !== id && e.target !== id),
+        })
+      }
+      if (data.edgeId) {
+        const id = data.edgeId as string
+        const { edges } = useGraphStore.getState()
+        useGraphStore.setState({ edges: edges.filter(e => e.id !== id) })
+      }
+    } finally {
+      isRemoteRef.current = false
     }
   }, [])
   
@@ -94,6 +146,8 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
     userName: currentUser?.fullName || currentUser?.username || 'Anonymous',
     enabled: !!projectId && !!currentUser,
     onElementUpdate: handleElementUpdate,
+    onElementCreate: handleRemoteCreate,
+    onElementDelete: handleRemoteDelete,
     onUserJoin: useCallback((userId: string) => {
       setOnlineUsers(prev => prev.includes(userId) ? prev : [...prev, userId])
     }, []),
@@ -107,21 +161,81 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
     if (!projectId || !currentUser) return
     
     const unsub = useGraphStore.subscribe((state, prevState) => {
-      // Detect node changes and broadcast
-      if (state.nodes !== prevState.nodes && state.isDirty) {
+      // Skip broadcasting when we're applying remote changes
+      if (isRemoteRef.current) return
+      
+      // --- Node changes ---
+      if (state.nodes !== prevState.nodes) {
+        const prevMap = new Map(prevState.nodes.map(n => [n.id, n]))
+        const currMap = new Map(state.nodes.map(n => [n.id, n]))
+        
+        // New nodes → broadcast element_create
         for (const node of state.nodes) {
-          const prevNode = prevState.nodes.find(n => n.id === node.id)
-          if (!prevNode) continue
+          if (!prevMap.has(node.id)) {
+            webSocketService.send('element_create', {
+              room: `schema:${projectId}`,
+              node,
+              userId: currentUser.id,
+            })
+          }
+        }
+        
+        // Changed nodes → broadcast element_update
+        for (const node of state.nodes) {
+          const prev = prevMap.get(node.id)
+          if (!prev) continue
           
           const changes: Record<string, unknown> = {}
-          if (node.position.x !== prevNode.position.x || node.position.y !== prevNode.position.y) {
+          if (node.position.x !== prev.position.x || node.position.y !== prev.position.y) {
             changes.position = node.position
           }
-          if (node.data !== prevNode.data) {
+          if (node.data !== prev.data) {
             Object.assign(changes, node.data)
+          }
+          if (node.style !== prev.style && node.style) {
+            changes.style = node.style
           }
           if (Object.keys(changes).length > 0) {
             sendElementUpdate(node.id, changes)
+          }
+        }
+        
+        // Deleted nodes → broadcast element_delete
+        for (const prev of prevState.nodes) {
+          if (!currMap.has(prev.id)) {
+            webSocketService.send('element_delete', {
+              room: `schema:${projectId}`,
+              elementId: prev.id,
+              userId: currentUser.id,
+            })
+          }
+        }
+      }
+      
+      // --- Edge changes ---
+      if (state.edges !== prevState.edges) {
+        const prevMap = new Map(prevState.edges.map(e => [e.id, e]))
+        const currMap = new Map(state.edges.map(e => [e.id, e]))
+        
+        // New edges
+        for (const edge of state.edges) {
+          if (!prevMap.has(edge.id)) {
+            webSocketService.send('element_create', {
+              room: `schema:${projectId}`,
+              edge,
+              userId: currentUser.id,
+            })
+          }
+        }
+        
+        // Deleted edges
+        for (const prev of prevState.edges) {
+          if (!currMap.has(prev.id)) {
+            webSocketService.send('element_delete', {
+              room: `schema:${projectId}`,
+              edgeId: prev.id,
+              userId: currentUser.id,
+            })
           }
         }
       }
