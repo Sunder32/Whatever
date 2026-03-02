@@ -43,7 +43,18 @@ var upgrader = websocket.Upgrader{
 		if origin == "" {
 			return true // Allow non-browser clients
 		}
-		return allowedOrigins[origin]
+		// Explicitly allowed origins
+		if allowedOrigins[origin] {
+			return true
+		}
+		// Same-origin requests are always allowed (origin matches Host)
+		host := r.Host
+		if host != "" {
+			if origin == "http://"+host || origin == "https://"+host {
+				return true
+			}
+		}
+		return false
 	},
 }
 
