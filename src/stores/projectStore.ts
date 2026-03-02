@@ -173,14 +173,16 @@ export const useProjectStore = create<ProjectStore>()(
             isLoading: false
           }))
           
-          // Try to sync with API
+          // Try to sync with API and use server-assigned ID
+          let finalProject = newProject
           try {
             const response = await projectsApi.create(data)
             if (response.success && response.data) {
+              finalProject = { ...newProject, ...response.data }
               // Update with server ID
               set(state => ({
                 projects: state.projects.map(p => 
-                  p.id === newProject.id ? { ...newProject, ...response.data } : p
+                  p.id === newProject.id ? finalProject : p
                 )
               }))
             }
@@ -188,7 +190,7 @@ export const useProjectStore = create<ProjectStore>()(
             console.error('Failed to sync project to server:', err)
           }
           
-          return newProject
+          return finalProject
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Failed to create project'
           set({ isLoading: false, error: message })

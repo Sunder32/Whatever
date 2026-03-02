@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"diagram-app/backend/internal/models"
@@ -41,18 +43,33 @@ func (r *ProjectRepository) Create(ctx context.Context, project *models.Project)
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 	`
 
-	_, err = r.pool.Exec(ctx, query,
-		project.ID,
-		project.OwnerID,
-		project.Name,
-		project.Description,
-		settingsJSON,
-		project.CreatedAt,
-		project.UpdatedAt,
-		project.IsArchived,
-		project.IsPublic,
-		metadataJSON,
-	)
+	// Try to insert; if name conflicts (unique index), append a suffix
+	originalName := project.Name
+	for attempt := 0; attempt < 10; attempt++ {
+		_, err = r.pool.Exec(ctx, query,
+			project.ID,
+			project.OwnerID,
+			project.Name,
+			project.Description,
+			settingsJSON,
+			project.CreatedAt,
+			project.UpdatedAt,
+			project.IsArchived,
+			project.IsPublic,
+			metadataJSON,
+		)
+		if err == nil {
+			return nil
+		}
+		// Check if it's a unique constraint violation on name
+		if strings.Contains(err.Error(), "idx_projects_owner_name_unique") || strings.Contains(err.Error(), "duplicate key") {
+			attempt++
+			project.Name = fmt.Sprintf("%s (%d)", originalName, attempt)
+			project.ID = uuid.New() // new UUID for retry
+			continue
+		}
+		return err
+	}
 
 	return err
 }
