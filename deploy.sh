@@ -11,7 +11,7 @@
 
 set -euo pipefail
 
-APP_DIR="/opt/diagram-app"
+APP_DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="${APP_DIR}/.env"
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
