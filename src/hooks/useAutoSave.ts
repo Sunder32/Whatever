@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useDiagramStore, useAppStore } from '@/stores'
+import { webSocketService } from '@/services'
 
 interface UseAutoSaveOptions {
   interval?: number
@@ -47,7 +48,7 @@ export function useAutoSave(options: UseAutoSaveOptions = {}) {
       
       lastSaveRef.current = contentHash
       setHasUnsavedChanges(false)
-      console.log('Auto-save completed at', new Date().toISOString())
+      if (import.meta.env.DEV) console.debug('Auto-save completed at', new Date().toISOString())
     } catch (error) {
       console.error('Auto-save failed:', error)
       onError?.(error as Error)
@@ -78,6 +79,9 @@ export function useAutoSave(options: UseAutoSaveOptions = {}) {
   // Save on page unload
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Disconnect WebSocket on page unload
+      webSocketService.disconnect()
+      
       if (hasUnsavedChanges) {
         e.preventDefault()
         e.returnValue = ''

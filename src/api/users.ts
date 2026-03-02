@@ -48,18 +48,12 @@ export const usersApi = {
 
   // Follow a user
   async follow(userId: string): Promise<ApiResponse<void>> {
-    console.log('usersApi.follow called with userId:', userId)
-    const result = await apiClient.post<void>(`/users/${userId}/follow`)
-    console.log('usersApi.follow response:', result)
-    return result
+    return apiClient.post<void>(`/users/${userId}/follow`)
   },
 
   // Unfollow a user
   async unfollow(userId: string): Promise<ApiResponse<void>> {
-    console.log('usersApi.unfollow called with userId:', userId)
-    const result = await apiClient.delete<void>(`/users/${userId}/follow`)
-    console.log('usersApi.unfollow response:', result)
-    return result
+    return apiClient.delete<void>(`/users/${userId}/follow`)
   },
 
   // Get user's followers

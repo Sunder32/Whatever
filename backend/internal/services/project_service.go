@@ -105,10 +105,8 @@ func (s *ProjectService) Update(ctx context.Context, projectID, userID uuid.UUID
 	if isArchived != nil {
 		project.IsArchived = *isArchived
 	}
-	if settings != nil {
-		for k, v := range settings {
-			project.Settings[k] = v
-		}
+	for k, v := range settings {
+		project.Settings[k] = v
 	}
 
 	if err := s.projectRepo.Update(ctx, project); err != nil {

@@ -27,9 +27,9 @@ import {
   CommandPalette
 } from '@/components'
 import { FlowEditor } from '@/components/FlowEditor'
-import { useDiagramStore, useAppStore, useProjectStore, useGraphStore } from '@/stores'
+import { useDiagramStore, useAppStore, useProjectStore, useGraphStore, useAuthStore } from '@/stores'
 import { useTheme, useOnlineStatus, useKeyboardShortcuts, useAutoSave } from '@/hooks'
-import { storageService } from '@/services'
+import { storageService, webSocketService } from '@/services'
 import { cn } from '@/utils'
 import { type TemplateType, getTemplateById } from '@/utils/diagramTemplates'
 import { syncFlowToWtvFile } from '@/utils/diagramAdapter'
@@ -63,6 +63,10 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [storageMode, setStorageMode] = useState<'local' | 'cloud' | 'syncing'>('local')
+  
+  // Online collaboration users
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([])
+  const currentUser = useAuthStore(state => state.user)
   
   // Stores
   const file = useDiagramStore(state => state.file)
@@ -242,6 +246,26 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
     return () => unsubscribe()
   }, [])
   
+  // Listen for online collaboration users
+  useEffect(() => {
+    if (!projectId || !currentUser) return
+    
+    const unsubJoin = webSocketService.on('user_joined', (data: unknown) => {
+      const { userId } = data as { userId: string }
+      setOnlineUsers(prev => prev.includes(userId) ? prev : [...prev, userId])
+    })
+    
+    const unsubLeave = webSocketService.on('user_left', (data: unknown) => {
+      const { userId } = data as { userId: string }
+      setOnlineUsers(prev => prev.filter(id => id !== userId))
+    })
+    
+    return () => {
+      unsubJoin()
+      unsubLeave()
+    }
+  }, [projectId, currentUser])
+  
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Read-only banner */}
@@ -352,6 +376,30 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
             <Share2 size={16} />
           </button>
           
+          {/* Online collaboration users */}
+          {onlineUsers.length > 0 && (
+            <div className="flex items-center -space-x-1.5 ml-1">
+              {onlineUsers.slice(0, 4).map((userId, i) => {
+                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+                return (
+                  <div
+                    key={userId}
+                    className="w-6 h-6 rounded-full border-2 border-background flex items-center justify-center text-[9px] font-bold text-white"
+                    style={{ backgroundColor: colors[i % colors.length], zIndex: 10 - i }}
+                    title={`User online`}
+                  >
+                    {String(i + 1)}
+                  </div>
+                )
+              })}
+              {onlineUsers.length > 4 && (
+                <div className="w-6 h-6 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[9px] font-medium text-muted-foreground">
+                  +{onlineUsers.length - 4}
+                </div>
+              )}
+            </div>
+          )}
+          
           <button
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             className="p-2 rounded-lg hover:bg-accent transition-colors"
@@ -388,7 +436,7 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
       
       {/* Main editor - React Flow based */}
       <div className="flex-1 overflow-hidden">
-        <FlowEditor readOnly={!canEdit} />
+        <FlowEditor readOnly={!canEdit} projectId={projectId} />
       </div>
       
       {/* Dialogs - rendered outside main flow */}

@@ -45,8 +45,8 @@ export function useCollaboration(options: UseCollaborationOptions) {
     // Join schema room
     webSocketService.joinSchema(schemaId)
 
-    // Listen for cursor updates
-    const unsubCursor = webSocketService.on('cursor:update', (data: unknown) => {
+    // Listen for cursor updates from backend (type: cursor_move)
+    const unsubCursor = webSocketService.on('cursor_move', (data: unknown) => {
       const update = data as { userId: string; userName: string; color: string; position: { x: number; y: number } }
       
       if (update.userId !== userId) {
@@ -58,8 +58,8 @@ export function useCollaboration(options: UseCollaborationOptions) {
       }
     })
 
-    // Listen for element updates
-    const unsubElement = webSocketService.on('element:update', (data: unknown) => {
+    // Listen for element updates from backend (type: element_update)
+    const unsubElement = webSocketService.on('element_update', (data: unknown) => {
       const update = data as { elementId: string; changes: Record<string, unknown>; userId: string }
       
       if (update.userId !== userId) {
@@ -67,13 +67,13 @@ export function useCollaboration(options: UseCollaborationOptions) {
       }
     })
 
-    // Listen for user join/leave
-    const unsubJoin = webSocketService.on('user:joined', (data: unknown) => {
+    // Listen for user join/leave from backend (type: user_joined / user_left)
+    const unsubJoin = webSocketService.on('user_joined', (data: unknown) => {
       const { userId: joinedUserId, userName: joinedUserName } = data as { userId: string; userName: string }
       onUserJoin?.(joinedUserId, joinedUserName)
     })
 
-    const unsubLeave = webSocketService.on('user:left', (data: unknown) => {
+    const unsubLeave = webSocketService.on('user_left', (data: unknown) => {
       const { userId: leftUserId } = data as { userId: string }
       cursorsRef.current.delete(leftUserId)
       onCursorUpdate?.(new Map(cursorsRef.current))
@@ -108,13 +108,13 @@ export function useCollaboration(options: UseCollaborationOptions) {
 
   const sendCursorPosition = useCallback((position: { x: number; y: number }) => {
     if (!enabled || !schemaId) return
-    webSocketService.sendCursorPosition(position)
-  }, [enabled, schemaId])
+    webSocketService.sendCursorPosition(position, { userId, userName, color: userColor })
+  }, [enabled, schemaId, userId, userName, userColor])
 
   const sendElementUpdate = useCallback((elementId: string, changes: Record<string, unknown>) => {
     if (!enabled || !schemaId) return
-    webSocketService.sendElementUpdate(elementId, changes)
-  }, [enabled, schemaId])
+    webSocketService.sendElementUpdate(elementId, changes, userId)
+  }, [enabled, schemaId, userId])
 
   const sendSelectionUpdate = useCallback((selectedElements: string[]) => {
     if (!enabled || !schemaId) return

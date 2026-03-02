@@ -1,0 +1,47 @@
+# =============================================================================
+# Production Dockerfile — builds React frontend + serves via Nginx
+# =============================================================================
+
+# --- Stage 1: Install dependencies ---
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json* yarn.lock* pnpm-lock.yaml* ./
+# Remove electron/desktop native deps that break on alpine and aren't needed for web
+RUN if [ -f package.json ]; then \
+      sed -i '/"better-sqlite3"/d; /"electron-store"/d; /"electron"/d; /"fs-extra"/d; /"knex"/d; /"winston"/d' package.json || true; \
+    fi
+RUN if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+    elif [ -f package-lock.json ]; then npm ci --ignore-scripts; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
+    else npm install --ignore-scripts; fi
+
+# --- Stage 2: Build the React app ---
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+# Build with production API URL (relative — nginx will proxy)
+ENV VITE_API_URL=/api/v1
+RUN npm run build
+
+# --- Stage 3: Production Nginx image ---
+FROM nginx:1.25-alpine
+
+# Copy built static files into nginx html root
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Use non-root user
+RUN addgroup -g 1001 appgroup && \
+    adduser -S appuser -u 1001 -G appgroup && \
+    chown -R appuser:appgroup /usr/share/nginx/html && \
+    chown -R appuser:appgroup /var/cache/nginx && \
+    chown -R appuser:appgroup /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown appuser:appgroup /var/run/nginx.pid
+
+EXPOSE 80 443
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD wget -q -O /dev/null http://127.0.0.1/health || exit 1
+
+CMD ["nginx", "-g", "daemon off;"]

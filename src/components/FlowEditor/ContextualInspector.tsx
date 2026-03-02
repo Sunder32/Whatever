@@ -163,7 +163,7 @@ export const ContextualInspector = memo(function ContextualInspector() {
     if (selectedNodeIds.length > 0) {
       const newNodes = duplicateNodes(selectedNodeIds)
       // Select new nodes (would need to update selection store)
-      console.log('Duplicated nodes:', newNodes.length)
+      if (import.meta.env.DEV) console.debug('Duplicated nodes:', newNodes.length)
     }
   }, [selectedNodeIds, duplicateNodes])
   

@@ -27,9 +27,8 @@ export interface ProjectListResponse {
 }
 
 export interface AddCollaboratorRequest {
-  userId: string
-  role: 'editor' | 'viewer'
-  permissions?: Record<string, boolean>
+  email: string
+  permission: 'read' | 'write' | 'admin'
 }
 
 export const projectsApi = {

@@ -116,6 +116,15 @@ func (h *SchemaHandler) Create(c *gin.Context) {
 }
 
 func (h *SchemaHandler) GetByID(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "User not authenticated",
+		})
+		return
+	}
+
 	schemaIDStr := c.Param("id")
 	schemaID, err := uuid.Parse(schemaIDStr)
 	if err != nil {
@@ -131,6 +140,16 @@ func (h *SchemaHandler) GetByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"error":   "Schema not found",
+		})
+		return
+	}
+
+	// Check project access
+	hasAccess, err := h.projectService.HasAccess(c.Request.Context(), schema.ProjectID, userID.(uuid.UUID))
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "Access denied",
 		})
 		return
 	}
@@ -192,12 +211,40 @@ func (h *SchemaHandler) List(c *gin.Context) {
 }
 
 func (h *SchemaHandler) Update(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "User not authenticated",
+		})
+		return
+	}
+
 	schemaIDStr := c.Param("id")
 	schemaID, err := uuid.Parse(schemaIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "Invalid schema ID",
+		})
+		return
+	}
+
+	// Check access via schema's project
+	existing, err := h.schemaService.Get(c.Request.Context(), schemaID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "Schema not found",
+		})
+		return
+	}
+
+	hasAccess, err := h.projectService.HasAccess(c.Request.Context(), existing.ProjectID, userID.(uuid.UUID))
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "Access denied",
 		})
 		return
 	}
@@ -238,12 +285,40 @@ func (h *SchemaHandler) Update(c *gin.Context) {
 }
 
 func (h *SchemaHandler) Delete(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "User not authenticated",
+		})
+		return
+	}
+
 	schemaIDStr := c.Param("id")
 	schemaID, err := uuid.Parse(schemaIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "Invalid schema ID",
+		})
+		return
+	}
+
+	// Check access via schema's project
+	existing, err := h.schemaService.Get(c.Request.Context(), schemaID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "Schema not found",
+		})
+		return
+	}
+
+	hasAccess, err := h.projectService.HasAccess(c.Request.Context(), existing.ProjectID, userID.(uuid.UUID))
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "Access denied",
 		})
 		return
 	}
@@ -329,12 +404,40 @@ func (h *SchemaHandler) Duplicate(c *gin.Context) {
 }
 
 func (h *SchemaHandler) GetVersions(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "User not authenticated",
+		})
+		return
+	}
+
 	schemaIDStr := c.Param("id")
 	schemaID, err := uuid.Parse(schemaIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"error":   "Invalid schema ID",
+		})
+		return
+	}
+
+	// Check access via schema's project
+	schema, err := h.schemaService.Get(c.Request.Context(), schemaID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "Schema not found",
+		})
+		return
+	}
+
+	hasAccess, err := h.projectService.HasAccess(c.Request.Context(), schema.ProjectID, userID.(uuid.UUID))
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, gin.H{
+			"success": false,
+			"error":   "Access denied",
 		})
 		return
 	}
@@ -371,6 +474,15 @@ func (h *SchemaHandler) GetVersions(c *gin.Context) {
 }
 
 func (h *SchemaHandler) GetVersion(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"success": false,
+			"error":   "User not authenticated",
+		})
+		return
+	}
+
 	versionIDStr := c.Param("versionId")
 	versionID, err := uuid.Parse(versionIDStr)
 	if err != nil {
@@ -387,6 +499,18 @@ func (h *SchemaHandler) GetVersion(c *gin.Context) {
 			"success": false,
 			"error":   "Version not found",
 		})
+		return
+	}
+
+	// Check access via schema's project
+	schema, err := h.schemaService.Get(c.Request.Context(), version.SchemaID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Schema not found"})
+		return
+	}
+	hasAccess, err := h.projectService.HasAccess(c.Request.Context(), schema.ProjectID, userID.(uuid.UUID))
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Access denied"})
 		return
 	}
 
@@ -441,6 +565,12 @@ func (h *SchemaHandler) CreateVersion(c *gin.Context) {
 }
 
 func (h *SchemaHandler) RestoreVersion(c *gin.Context) {
+	userID, exists := c.Get("userID")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "error": "User not authenticated"})
+		return
+	}
+
 	versionIDStr := c.Param("versionId")
 	versionID, err := uuid.Parse(versionIDStr)
 	if err != nil {
@@ -457,6 +587,18 @@ func (h *SchemaHandler) RestoreVersion(c *gin.Context) {
 			"success": false,
 			"error":   "Version not found",
 		})
+		return
+	}
+
+	// Check access via schema's project
+	schemaForAccess, err := h.schemaService.Get(c.Request.Context(), version.SchemaID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "Schema not found"})
+		return
+	}
+	hasAccess, err := h.projectService.HasAccess(c.Request.Context(), schemaForAccess.ProjectID, userID.(uuid.UUID))
+	if err != nil || !hasAccess {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "Access denied"})
 		return
 	}
 

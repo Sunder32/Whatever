@@ -110,6 +110,24 @@ func (m *AuthMiddleware) RequireRole(roles ...string) gin.HandlerFunc {
 
 		_ = tokenClaims
 
+		// Check if user has any of the required roles
+		hasRole := false
+		for _, role := range roles {
+			if tokenClaims.Role == role {
+				hasRole = true
+				break
+			}
+		}
+
+		if !hasRole {
+			c.JSON(http.StatusForbidden, gin.H{
+				"success": false,
+				"error":   "Insufficient permissions",
+			})
+			c.Abort()
+			return
+		}
+
 		c.Next()
 	}
 }

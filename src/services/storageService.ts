@@ -35,7 +35,6 @@ class StorageService {
   private autoSaveInterval: ReturnType<typeof setInterval> | null = null
   private syncInterval: ReturnType<typeof setInterval> | null = null
   private listeners: Set<(state: StorageState) => void> = new Set()
-  private currentFile: WtvFile | null = null
   private saveDebounceTimer: ReturnType<typeof setTimeout> | null = null
   
   async init(): Promise<void> {
@@ -79,13 +78,9 @@ class StorageService {
   }
   
   private startAutoSave() {
-    if (this.autoSaveInterval) return
-    
-    this.autoSaveInterval = setInterval(() => {
-      if (this.currentFile) {
-        this.saveLocal(this.currentFile)
-      }
-    }, 5000)
+    // Auto-save is handled by useAutoSave hook (30s interval with change detection).
+    // StorageService only persists on explicit save() calls now.
+    // Keeping this method for API compatibility.
   }
   
   private startSyncInterval() {
@@ -100,8 +95,6 @@ class StorageService {
   
   // Save file immediately (debounced)
   async save(file: WtvFile): Promise<void> {
-    this.currentFile = file
-    
     // Clear previous timer
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer)

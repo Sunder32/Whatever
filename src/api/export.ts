@@ -1,6 +1,5 @@
 import { apiClient, API_BASE_URL } from './client'
 import type { WtvFile } from '@/types'
-import axios from 'axios'
 
 export type ExportFormat = 'png' | 'svg' | 'pdf'
 
@@ -8,53 +7,42 @@ export interface ExportRequest {
   format: ExportFormat
   width?: number
   height?: number
-  dpi?: number
+  scale?: number
+  quality?: number
+  backgroundColor?: string
   content: {
     nodes: any[]
     edges: any[]
-  }
-  canvas_state?: {
-    zoom: number
-    pan: { x: number; y: number }
+    layers?: any[]
   }
 }
 
 export interface ExportResponse {
   success: boolean
-  data?: any // Blob or base64?
-  url?: string
+  data?: any
   error?: string
 }
 
 export const exportApi = {
   exportDiagram: async (file: WtvFile, format: ExportFormat): Promise<Blob> => {
-    // Transform WtvFile to ExportRequest
+    // Transform WtvFile to ExportRequest matching Python backend schema
     const requestData: ExportRequest = {
       format,
-      // Default standard HD export
       width: 1920, 
       height: 1080,
-      dpi: 300,
+      scale: 2.0,
+      quality: 95,
+      backgroundColor: '#ffffff',
       content: {
         nodes: file.content.nodes,
-        edges: file.content.edges
+        edges: file.content.edges,
+        layers: [],
       },
-      canvas_state: {
-        zoom: file.canvasState.zoom,
-        pan: file.canvasState.pan
-      }
     }
 
-    // Use axios directly for blob response type with centralized base URL
-    const response = await axios.post(`${API_BASE_URL}/export`, requestData, {
-      responseType: 'blob',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      withCredentials: true,
-    })
-    
-    return response.data as Blob
+    // Use apiClient for auth header, request blob via downloadable endpoint
+    const response = await apiClient.post('/export', requestData, { responseType: 'blob' }) as unknown as Blob
+    return response
   },
 
   checkHealth: async () => {

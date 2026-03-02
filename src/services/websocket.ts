@@ -1,3 +1,5 @@
+import { API_BASE_URL } from '@/api/client'
+
 type MessageHandler = (data: unknown) => void
 type ConnectionHandler = () => void
 
@@ -5,6 +7,24 @@ interface WebSocketMessage {
   type: string
   payload: unknown
   timestamp: string
+}
+
+/**
+ * Derive WebSocket URL from API base URL
+ */
+export function getWebSocketUrl(): string {
+  if (API_BASE_URL.startsWith('/')) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}/ws`
+  }
+  try {
+    const url = new URL(API_BASE_URL)
+    const wsProtocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${wsProtocol}//${url.host}/ws`
+  } catch {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}/ws`
+  }
 }
 
 class WebSocketService {
@@ -51,7 +71,7 @@ class WebSocketService {
         this.ws = new WebSocket(wsUrl)
 
         this.ws.onopen = () => {
-          console.log('WebSocket connected')
+          if (import.meta.env.DEV) console.debug('WebSocket connected')
           this.isConnecting = false
           this.reconnectAttempts = 0
           this.startHeartbeat()
@@ -69,7 +89,7 @@ class WebSocketService {
         }
 
         this.ws.onclose = () => {
-          console.log('WebSocket disconnected')
+          if (import.meta.env.DEV) console.debug('WebSocket disconnected')
           this.isConnecting = false
           this.stopHeartbeat()
           this.disconnectionHandlers.forEach(handler => handler())
@@ -99,14 +119,14 @@ class WebSocketService {
 
   private attemptReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.log('Max reconnection attempts reached')
+      console.warn('Max reconnection attempts reached')
       return
     }
 
     this.reconnectAttempts++
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1)
     
-    console.log(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`)
+    if (import.meta.env.DEV) console.debug(`Attempting to reconnect in ${delay}ms (attempt ${this.reconnectAttempts})`)
     
     setTimeout(() => {
       this.connect().catch(console.error)
@@ -184,23 +204,24 @@ class WebSocketService {
   // Schema-specific methods
   joinSchema(schemaId: string) {
     this.currentSchemaId = schemaId
-    this.send('schema:join', { schemaId })
+    this.send('join_room', { room: `schema:${schemaId}` })
   }
 
   leaveSchema(schemaId: string) {
     if (this.currentSchemaId === schemaId) {
       this.currentSchemaId = null
     }
-    this.send('schema:leave', { schemaId })
+    this.send('leave_room', { room: `schema:${schemaId}` })
   }
 
   // Cursor updates for real-time collaboration
-  sendCursorPosition(position: { x: number; y: number }) {
+  sendCursorPosition(position: { x: number; y: number }, meta?: { userId?: string; userName?: string; color?: string }) {
     if (!this.currentSchemaId) return
     
-    this.send('cursor:move', {
-      schemaId: this.currentSchemaId,
+    this.send('cursor_move', {
+      room: `schema:${this.currentSchemaId}`,
       position,
+      ...meta,
     })
   }
 
@@ -208,20 +229,21 @@ class WebSocketService {
   sendSelectionUpdate(selectedElements: string[]) {
     if (!this.currentSchemaId) return
     
-    this.send('selection:update', {
-      schemaId: this.currentSchemaId,
+    this.send('selection_change', {
+      room: `schema:${this.currentSchemaId}`,
       selectedElements,
     })
   }
 
   // Element updates for collaborative editing
-  sendElementUpdate(elementId: string, changes: Record<string, unknown>) {
+  sendElementUpdate(elementId: string, changes: Record<string, unknown>, userId?: string) {
     if (!this.currentSchemaId) return
     
-    this.send('element:update', {
-      schemaId: this.currentSchemaId,
+    this.send('element_update', {
+      room: `schema:${this.currentSchemaId}`,
       elementId,
       changes,
+      userId,
     })
   }
 
@@ -233,7 +255,7 @@ class WebSocketService {
         return
       }
 
-      const unsubscribe = this.on('element:lock:response', (data: unknown) => {
+      const unsubscribe = this.on('element_lock_response', (data: unknown) => {
         const response = data as { elementId: string; success: boolean }
         if (response.elementId === elementId) {
           unsubscribe()
@@ -241,8 +263,8 @@ class WebSocketService {
         }
       })
 
-      this.send('element:lock', {
-        schemaId: this.currentSchemaId,
+      this.send('element_lock', {
+        room: `schema:${this.currentSchemaId}`,
         elementId,
       })
 
@@ -257,8 +279,8 @@ class WebSocketService {
   unlockElement(elementId: string) {
     if (!this.currentSchemaId) return
     
-    this.send('element:unlock', {
-      schemaId: this.currentSchemaId,
+    this.send('element_unlock', {
+      room: `schema:${this.currentSchemaId}`,
       elementId,
     })
   }

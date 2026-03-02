@@ -40,13 +40,16 @@ async def lifespan(app: FastAPI):
     logger.info("Shutting down Python service")
 
 
+# Disable docs in production
+_is_production = settings.debug is False and settings.log_level == "WARNING"
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="Python microservice for diagram application - encryption, layout algorithms, and export functionality",
-    docs_url="/docs",
-    redoc_url="/redoc",
-    openapi_url="/openapi.json",
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
     lifespan=lifespan
 )
 
@@ -54,8 +57,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=settings.cors_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
 

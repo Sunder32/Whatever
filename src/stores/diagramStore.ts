@@ -217,7 +217,7 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
           return
         }
       } catch (error) {
-        console.log('Could not fetch schema from server, falling back to local:', error)
+        console.warn('Could not fetch schema from server, falling back to local:', error)
       }
     }
     
@@ -243,7 +243,7 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
         try {
           await storageService.save(file)
         } catch (error) {
-          console.log('Could not save new file to server:', error)
+          console.warn('Could not save new file to server:', error)
         }
       }
     }

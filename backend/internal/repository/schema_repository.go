@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"diagram-app/backend/internal/models"
@@ -434,7 +435,8 @@ func (r *SchemaRepository) Search(ctx context.Context, userID uuid.UUID, query s
 		LIMIT $3 OFFSET $4
 	`
 
-	searchPattern := "%" + query + "%"
+	escapedQuery := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(query, "\\", "\\\\"), "%", "\\%"), "_", "\\_")
+	searchPattern := "%" + escapedQuery + "%"
 	rows, err := r.pool.Query(ctx, searchQuery, userID, searchPattern, limit, offset)
 	if err != nil {
 		return nil, err

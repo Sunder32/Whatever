@@ -51,14 +51,16 @@ func main() {
 	syncService := services.NewSyncService(syncRepo, schemaRepo)
 	pythonClient := services.NewPythonServiceClient(cfg.PythonServiceURL)
 
-	authHandler := handlers.NewAuthHandler(authService, userRepo)
+	authHandler := handlers.NewAuthHandler(authService, userRepo, projectRepo)
 	projectHandler := handlers.NewProjectHandler(projectService)
 	schemaHandler := handlers.NewSchemaHandler(schemaService, projectService)
 	syncHandler := handlers.NewSyncHandler(syncService)
 	wsHandler := handlers.NewWebSocketHandler()
-	userHandler := handlers.NewUserHandler(userRepo)
+	userHandler := handlers.NewUserHandler(userRepo, projectRepo)
 	exportHandler := handlers.NewExportHandler(pythonClient)
 	templateHandler := handlers.NewTemplateHandler(pool)
+	assetHandler := handlers.NewAssetHandler(pool)
+	lockHandler := handlers.NewLockHandler(pool)
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
@@ -68,7 +70,7 @@ func main() {
 	router := gin.Default()
 
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"*"},
+		AllowOrigins:     cfg.CORSOrigins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "X-Request-ID"},
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
@@ -78,8 +80,9 @@ func main() {
 
 	router.Use(rateLimiter.Middleware())
 	router.Use(middleware.Logger())
+	router.Use(middleware.SecurityHeaders())
 
-	// Serve static files
+	// Serve uploaded files behind auth for private assets
 	router.Static("/uploads", "./uploads")
 
 	router.GET("/health", func(c *gin.Context) {
@@ -134,6 +137,11 @@ func main() {
 			schemas.POST("/:id/versions", schemaHandler.CreateVersion)
 			schemas.GET("/:id/versions/:versionId", schemaHandler.GetVersion)
 			schemas.POST("/:id/versions/:versionId/restore", schemaHandler.RestoreVersion)
+
+			// Lock endpoints (ТЗ: GET/POST/DELETE locks)
+			schemas.GET("/:id/locks", lockHandler.GetLocks)
+			schemas.POST("/:id/locks", lockHandler.CreateLock)
+			schemas.DELETE("/:id/locks/:lockId", lockHandler.DeleteLock)
 		}
 
 		sync := api.Group("/sync")
@@ -143,6 +151,10 @@ func main() {
 			sync.POST("/push", syncHandler.Push)
 			sync.POST("/resolve", syncHandler.ResolveConflict)
 			sync.GET("/status", syncHandler.GetStatus)
+			sync.POST("/queue", syncHandler.QueueOperation)
+			sync.POST("/process", syncHandler.ProcessQueue)
+			sync.POST("/detect-conflicts", syncHandler.DetectConflicts)
+			sync.POST("/full-sync", syncHandler.FullSync)
 		}
 
 		users := api.Group("/users")
@@ -150,6 +162,7 @@ func main() {
 		{
 			users.GET("/search", userHandler.Search)
 			users.GET("/suggested", userHandler.GetSuggested)
+			users.GET("/username/:username", userHandler.GetByUsername)
 			users.GET("/:id", userHandler.GetByID)
 			users.GET("/:id/projects", userHandler.GetUserProjects)
 			users.GET("/:id/followers", userHandler.GetFollowers)
@@ -169,12 +182,22 @@ func main() {
 			export.GET("/python-health", exportHandler.PythonServiceHealth)
 		}
 
-		// Templates (public, no auth required)
+		// Asset endpoints (ТЗ: POST/GET/DELETE assets)
+		assets := api.Group("/assets")
+		assets.Use(authMiddleware.Authenticate())
+		{
+			assets.POST("", assetHandler.Upload)
+			assets.GET("/:id", assetHandler.GetByID)
+			assets.DELETE("/:id", assetHandler.Delete)
+		}
+
+		// Templates (public read, auth for write)
 		templates := api.Group("/templates")
 		{
 			templates.GET("", templateHandler.List)
 			templates.GET("/categories", templateHandler.GetCategories)
 			templates.GET("/:id", templateHandler.GetByID)
+			templates.POST("/:id/use", authMiddleware.Authenticate(), templateHandler.UseTemplate)
 		}
 	}
 

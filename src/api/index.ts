@@ -7,3 +7,5 @@ export { collaborationApi, type Collaborator, type AddCollaboratorRequest } from
 export { usersApi, type UserSearchResult, type UserProfile, type FollowersResponse } from './users'
 export { templatesApi, type Template } from './templates'
 export { exportApi, type ExportFormat } from './export'
+export { assetsApi, type Asset, type UploadAssetResponse } from './assets'
+export { locksApi, type SchemaLock, type CreateLockRequest } from './locks'

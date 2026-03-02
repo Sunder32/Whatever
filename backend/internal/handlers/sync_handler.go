@@ -35,9 +35,11 @@ type DetectConflictsRequest struct {
 }
 
 type ResolveConflictRequest struct {
-	SchemaID      string                 `json:"schemaId" binding:"required"`
-	Resolution    string                 `json:"resolution" binding:"required,oneof=keep_local keep_remote merge"`
+	SchemaID      string                 `json:"schemaId"`
+	EntityID      string                 `json:"entityId"` // Frontend sends entityId
+	Resolution    string                 `json:"resolution" binding:"required,oneof=keep_local keep_remote merge client server"`
 	MergedContent map[string]interface{} `json:"mergedContent"`
+	MergedData    map[string]interface{} `json:"mergedData"` // Frontend sends mergedData
 }
 
 func NewSyncHandler(syncService *services.SyncService) *SyncHandler {
@@ -272,7 +274,19 @@ func (h *SyncHandler) ResolveConflict(c *gin.Context) {
 		return
 	}
 
-	schemaID, err := uuid.Parse(req.SchemaID)
+	schemaIDStr := req.SchemaID
+	if schemaIDStr == "" {
+		schemaIDStr = req.EntityID // Support frontend field name
+	}
+	if schemaIDStr == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "schemaId or entityId is required",
+		})
+		return
+	}
+
+	schemaID, err := uuid.Parse(schemaIDStr)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -281,7 +295,21 @@ func (h *SyncHandler) ResolveConflict(c *gin.Context) {
 		return
 	}
 
-	err = h.syncService.ResolveConflict(c.Request.Context(), schemaID, req.Resolution, req.MergedContent)
+	// Map frontend resolution values to backend ones
+	resolution := req.Resolution
+	switch resolution {
+	case "client":
+		resolution = "keep_local"
+	case "server":
+		resolution = "keep_remote"
+	}
+
+	mergedContent := req.MergedContent
+	if mergedContent == nil {
+		mergedContent = req.MergedData // Support frontend field name
+	}
+
+	err = h.syncService.ResolveConflict(c.Request.Context(), schemaID, resolution, mergedContent)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,

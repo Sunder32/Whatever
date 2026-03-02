@@ -71,10 +71,17 @@ func (s *SyncService) Push(ctx context.Context, userID uuid.UUID, operations []m
 	}
 
 	for _, op := range operations {
+		// Support both frontend field names (operationType/operationData) and backend ones (type/data)
 		opType, _ := op["type"].(string)
+		if opType == "" {
+			opType, _ = op["operationType"].(string)
+		}
 		entityType, _ := op["entityType"].(string)
 		entityIDStr, _ := op["entityId"].(string)
 		data, _ := op["data"].(map[string]interface{})
+		if data == nil {
+			data, _ = op["operationData"].(map[string]interface{})
+		}
 
 		entityID, err := uuid.Parse(entityIDStr)
 		if err != nil {

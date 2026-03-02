@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -82,7 +83,14 @@ func (rl *RateLimiter) Middleware() gin.HandlerFunc {
 		key := c.ClientIP()
 
 		if userID, exists := c.Get("userID"); exists {
-			key = userID.(string)
+			switch v := userID.(type) {
+			case string:
+				key = v
+			case fmt.Stringer:
+				key = v.String()
+			default:
+				key = fmt.Sprintf("%v", v)
+			}
 		}
 
 		if !rl.Allow(key) {
@@ -147,7 +155,14 @@ func (erl *EndpointRateLimiter) Middleware() gin.HandlerFunc {
 
 		key := c.ClientIP()
 		if userID, exists := c.Get("userID"); exists {
-			key = userID.(string)
+			switch v := userID.(type) {
+			case string:
+				key = v
+			case fmt.Stringer:
+				key = v.String()
+			default:
+				key = fmt.Sprintf("%v", v)
+			}
 		}
 
 		if !limiter.Allow(key) {
@@ -245,7 +260,14 @@ func (swrl *SlidingWindowRateLimiter) Middleware() gin.HandlerFunc {
 		key := c.ClientIP()
 
 		if userID, exists := c.Get("userID"); exists {
-			key = userID.(string)
+			switch v := userID.(type) {
+			case string:
+				key = v
+			case fmt.Stringer:
+				key = v.String()
+			default:
+				key = fmt.Sprintf("%v", v)
+			}
 		}
 
 		if !swrl.Allow(key) {
@@ -317,7 +339,14 @@ func (tbrl *TokenBucketRateLimiter) Middleware() gin.HandlerFunc {
 		key := c.ClientIP()
 
 		if userID, exists := c.Get("userID"); exists {
-			key = userID.(string)
+			switch v := userID.(type) {
+			case string:
+				key = v
+			case fmt.Stringer:
+				key = v.String()
+			default:
+				key = fmt.Sprintf("%v", v)
+			}
 		}
 
 		if !tbrl.Allow(key) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Cookie configuration
@@ -21,6 +22,7 @@ const (
 type AuthHandler struct {
 	authService *services.AuthService
 	userRepo    *repository.UserRepository
+	projectRepo *repository.ProjectRepository
 }
 
 type RegisterRequest struct {
@@ -50,10 +52,11 @@ type UpdateProfileRequest struct {
 	Preferences map[string]interface{} `json:"preferences"`
 }
 
-func NewAuthHandler(authService *services.AuthService, userRepo *repository.UserRepository) *AuthHandler {
+func NewAuthHandler(authService *services.AuthService, userRepo *repository.UserRepository, projectRepo *repository.ProjectRepository) *AuthHandler {
 	return &AuthHandler{
 		authService: authService,
 		userRepo:    userRepo,
+		projectRepo: projectRepo,
 	}
 }
 
@@ -113,6 +116,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	// Set refresh token as HttpOnly cookie BEFORE writing response body
+	setRefreshTokenCookie(c, tokens.RefreshToken)
+
 	c.JSON(http.StatusCreated, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -125,13 +131,9 @@ func (h *AuthHandler) Register(c *gin.Context) {
 			"tokens": gin.H{
 				"accessToken": tokens.AccessToken,
 				"expiresAt":   tokens.ExpiresAt,
-				// Don't send refresh token in body - it's in HttpOnly cookie
 			},
 		},
 	})
-
-	// Set refresh token as HttpOnly cookie
-	setRefreshTokenCookie(c, tokens.RefreshToken)
 }
 
 func (h *AuthHandler) Login(c *gin.Context) {
@@ -153,6 +155,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// Set refresh token as HttpOnly cookie BEFORE writing response body
+	setRefreshTokenCookie(c, tokens.RefreshToken)
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -168,13 +173,9 @@ func (h *AuthHandler) Login(c *gin.Context) {
 			"tokens": gin.H{
 				"accessToken": tokens.AccessToken,
 				"expiresAt":   tokens.ExpiresAt,
-				// Don't send refresh token in body - it's in HttpOnly cookie
 			},
 		},
 	})
-
-	// Set refresh token as HttpOnly cookie
-	setRefreshTokenCookie(c, tokens.RefreshToken)
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
@@ -257,6 +258,12 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 		followingCount, _ = h.userRepo.GetFollowingCount(c.Request.Context(), userID.(uuid.UUID))
 	}
 
+	// Get projects count
+	projectsCount := 0
+	if h.projectRepo != nil {
+		projectsCount, _ = h.projectRepo.Count(c.Request.Context(), userID.(uuid.UUID))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
@@ -268,7 +275,7 @@ func (h *AuthHandler) GetProfile(c *gin.Context) {
 			"preferences":    user.Settings,
 			"followersCount": followersCount,
 			"followingCount": followingCount,
-			"projectsCount":  0,
+			"projectsCount":  projectsCount,
 			"createdAt":      user.CreatedAt,
 			"updatedAt":      user.UpdatedAt,
 		},
@@ -299,6 +306,25 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"error":   "User not found",
+		})
+		return
+	}
+
+	// Apply updates
+	if req.FullName != "" {
+		user.Name = req.FullName
+	}
+	if req.AvatarURL != "" {
+		user.Avatar = &req.AvatarURL
+	}
+	if req.Preferences != nil {
+		user.Settings = req.Preferences
+	}
+
+	if err := h.userRepo.Update(c.Request.Context(), user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to update profile",
 		})
 		return
 	}
@@ -336,7 +362,42 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	_ = userID
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID.(uuid.UUID))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "User not found",
+		})
+		return
+	}
+
+	// Verify old password
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.OldPassword)); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Current password is incorrect",
+		})
+		return
+	}
+
+	// Hash new password
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), 12)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to process new password",
+		})
+		return
+	}
+
+	user.PasswordHash = string(newHash)
+	if err := h.userRepo.Update(c.Request.Context(), user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to update password",
+		})
+		return
+	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

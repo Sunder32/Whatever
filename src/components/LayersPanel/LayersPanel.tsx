@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { 
   Layers, 
@@ -24,7 +24,11 @@ export function LayersPanel({ isOpen, onClose: _onClose }: LayersPanelProps) {
   const addLayer = useDiagramStore(state => state.addLayer)
   const updateLayer = useDiagramStore(state => state.updateLayer)
   const deleteLayer = useDiagramStore(state => state.deleteLayer)
+  const moveLayer = useDiagramStore(state => state.moveLayer)
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null)
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
+  const dragNodeRef = useRef<HTMLDivElement | null>(null)
   
   if (!isOpen || !file) return null
   
@@ -57,6 +61,48 @@ export function LayersPanel({ isOpen, onClose: _onClose }: LayersPanelProps) {
       updateLayer(id, { name: newName.trim() })
     }
   }
+
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDragIndex(index)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(index))
+    // Make the dragged element semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      dragNodeRef.current = e.currentTarget as HTMLDivElement
+      requestAnimationFrame(() => {
+        if (dragNodeRef.current) dragNodeRef.current.style.opacity = '0.4'
+      })
+    }
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    if (dragNodeRef.current) {
+      dragNodeRef.current.style.opacity = '1'
+      dragNodeRef.current = null
+    }
+    setDragIndex(null)
+    setDragOverIndex(null)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setDragOverIndex(index)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent, toIndex: number) => {
+    e.preventDefault()
+    const fromIndex = dragIndex
+    if (fromIndex !== null && fromIndex !== toIndex) {
+      moveLayer(fromIndex, toIndex)
+    }
+    setDragIndex(null)
+    setDragOverIndex(null)
+    if (dragNodeRef.current) {
+      dragNodeRef.current.style.opacity = '1'
+      dragNodeRef.current = null
+    }
+  }, [dragIndex, moveLayer])
   
   return (
     <div className="absolute right-0 top-0 w-64 h-full bg-popover border-l shadow-lg z-40 flex flex-col">
@@ -75,12 +121,18 @@ export function LayersPanel({ isOpen, onClose: _onClose }: LayersPanelProps) {
       </div>
       
       <div className="flex-1 overflow-y-auto scrollbar-thin p-2">
-        {layers.map((layer, _index) => (
+        {layers.map((layer, index) => (
           <div
             key={layer.id}
+            draggable
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => handleDragOver(e, index)}
+            onDrop={(e) => handleDrop(e, index)}
             className={cn(
               'flex items-center gap-2 p-2 rounded-md cursor-pointer transition-colors',
-              selectedLayerId === layer.id ? 'bg-accent' : 'hover:bg-accent/50'
+              selectedLayerId === layer.id ? 'bg-accent' : 'hover:bg-accent/50',
+              dragOverIndex === index && dragIndex !== index && 'border-t-2 border-primary'
             )}
             onClick={() => setSelectedLayerId(layer.id)}
             onDoubleClick={() => handleRename(layer.id)}

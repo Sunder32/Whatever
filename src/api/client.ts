@@ -1,7 +1,7 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios'
 
-// Production server URL (VPS IP)
-const SERVER_URL = 'http://31.129.106.149/api/v1'
+// Server URL from environment or relative path
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || '/api/v1'
 
 // Check if running in Electron (via exposed context bridge in preload)
 const isElectron = typeof window !== 'undefined' && !!(window as any).electronAPI

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"time"
 
 	"diagram-app/backend/internal/models"
@@ -174,7 +175,8 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 			role = $5,
 			settings = $6,
 			email_verified = $7,
-			updated_at = $8
+			password_hash = $8,
+			updated_at = $9
 		WHERE id = $1 AND deleted_at IS NULL
 	`
 
@@ -186,6 +188,7 @@ func (r *UserRepository) Update(ctx context.Context, user *models.User) error {
 		user.Role,
 		settingsJSON,
 		user.EmailVerified,
+		user.PasswordHash,
 		user.UpdatedAt,
 	)
 
@@ -236,7 +239,8 @@ func (r *UserRepository) Search(ctx context.Context, query string, limit int) ([
 		LIMIT $2
 	`
 
-	rows, err := r.pool.Query(ctx, sqlQuery, "%"+query+"%", limit)
+	escapedQuery := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(query, "\\", "\\\\"), "%", "\\%"), "_", "\\_")
+	rows, err := r.pool.Query(ctx, sqlQuery, "%"+escapedQuery+"%", limit)
 	if err != nil {
 		return nil, err
 	}

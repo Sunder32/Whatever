@@ -26,6 +26,7 @@ import {
   Check
 } from 'lucide-react'
 import { useAuthStore, useProjectStore } from '@/stores'
+import { authApi } from '@/api'
 import { indexedDB, storageService } from '@/services'
 import { cn } from '@/utils'
 import type { WtvFile } from '@/types'
@@ -116,13 +117,11 @@ function ContributionGrid({ activities }: { activities: ActivityItem[] }) {
 function ProjectCard({ 
   name, 
   description, 
-  stars, 
   isPublic,
   updatedAt 
 }: { 
   name: string
   description: string
-  stars: number
   isPublic: boolean
   updatedAt: Date
 }) {
@@ -139,17 +138,18 @@ function ProjectCard({
             {isPublic ? 'Public' : 'Private'}
           </span>
         </div>
-        <button className="p-1 rounded hover:bg-accent">
-          <Star size={14} className="text-muted-foreground" />
-        </button>
+        <div className={cn(
+          'w-2 h-2 rounded-full',
+          isPublic ? 'bg-green-500' : 'bg-yellow-500'
+        )} title={isPublic ? 'Публичный' : 'Приватный'} />
       </div>
       {description && (
         <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{description}</p>
       )}
       <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
-          <Star size={12} />
-          {stars}
+          <Globe size={12} />
+          {isPublic ? 'Публичный' : 'Приватный'}
         </span>
         <span>
           Обновлено {formatRelativeTime(updatedAt)}
@@ -203,30 +203,34 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
       id: p.id,
       name: p.name,
       description: p.description || '',
-      stars: 0, // TODO: implement stars in backend
       isPublic: p.isPublic,
       updatedAt: new Date(p.updatedAt)
     })), 
   [ownProjects])
   
-  const [mockActivities] = useState<ActivityItem[]>(() => {
-    // Generate random activities for the last year
+  // Build real activities from project data (create/update events)
+  const realActivities = useMemo<ActivityItem[]>(() => {
     const activities: ActivityItem[] = []
-    const now = new Date()
-    for (let i = 0; i < 200; i++) {
-      const daysAgo = Math.floor(Math.random() * 365)
-      const date = new Date(now)
-      date.setDate(date.getDate() - daysAgo)
+    ownProjects.forEach(p => {
       activities.push({
-        id: `activity-${i}`,
-        type: ['create', 'edit', 'share', 'star', 'comment'][Math.floor(Math.random() * 5)] as ActivityItem['type'],
-        targetName: ['network-diagram', 'database-schema', 'api-architecture'][Math.floor(Math.random() * 3)],
-        targetType: Math.random() > 0.3 ? 'diagram' : 'project',
-        timestamp: date
+        id: `create-${p.id}`,
+        type: 'create',
+        targetName: p.name,
+        targetType: 'project',
+        timestamp: new Date(p.createdAt),
       })
-    }
-    return activities
-  })
+      if (p.updatedAt && p.updatedAt !== p.createdAt) {
+        activities.push({
+          id: `edit-${p.id}`,
+          type: 'edit',
+          targetName: p.name,
+          targetType: 'diagram',
+          timestamp: new Date(p.updatedAt),
+        })
+      }
+    })
+    return activities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+  }, [ownProjects])
   
   useEffect(() => {
     if (isOpen) {
@@ -256,6 +260,14 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
   }
   
   const handleChangePassword = async () => {
+    if (!currentPassword) {
+      setMessage({ type: 'error', text: 'Введите текущий пароль' })
+      return
+    }
+    if (newPassword.length < 6) {
+      setMessage({ type: 'error', text: 'Новый пароль должен быть не менее 6 символов' })
+      return
+    }
     if (newPassword !== confirmPassword) {
       setMessage({ type: 'error', text: 'Пароли не совпадают' })
       return
@@ -265,11 +277,18 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     setMessage(null)
     
     try {
-      // TODO: Implement password change API
-      setMessage({ type: 'success', text: 'Пароль успешно изменён' })
-      setCurrentPassword('')
-      setNewPassword('')
-      setConfirmPassword('')
+      const response = await authApi.changePassword({
+        oldPassword: currentPassword,
+        newPassword,
+      })
+      if (response.success) {
+        setMessage({ type: 'success', text: 'Пароль успешно изменён' })
+        setCurrentPassword('')
+        setNewPassword('')
+        setConfirmPassword('')
+      } else {
+        setMessage({ type: 'error', text: response.error || 'Неверный текущий пароль' })
+      }
     } catch {
       setMessage({ type: 'error', text: 'Ошибка при изменении пароля' })
     }
@@ -381,8 +400,8 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
                 <div className="text-muted-foreground text-xs">проектов</div>
               </div>
               <div className="text-center">
-                <div className="font-bold">{userProjects.reduce((acc, p) => acc + p.stars, 0)}</div>
-                <div className="text-muted-foreground text-xs">звёзд</div>
+                <div className="font-bold">{userProjects.filter(p => p.isPublic).length}</div>
+                <div className="text-muted-foreground text-xs">публичных</div>
               </div>
               <div className="text-center">
                 <div className="font-bold">{localFiles.length}</div>
@@ -498,7 +517,7 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
                 <div>
                   <h3 className="font-medium mb-4">Активность</h3>
                   <div className="p-4 rounded-lg border bg-secondary/30">
-                    <ContributionGrid activities={mockActivities} />
+                    <ContributionGrid activities={realActivities} />
                   </div>
                 </div>
                 
@@ -506,7 +525,7 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
                 <div>
                   <h3 className="font-medium mb-4">Последние действия</h3>
                   <div className="space-y-3">
-                    {mockActivities.slice(0, 5).map(activity => (
+                    {realActivities.slice(0, 5).map(activity => (
                       <div key={activity.id} className="flex items-start gap-3 p-3 rounded-lg bg-secondary/30">
                         <div className={cn(
                           'w-8 h-8 rounded-full flex items-center justify-center',
@@ -582,7 +601,7 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
             {activeTab === 'activity' && (
               <div className="space-y-6">
                 <div className="p-4 rounded-lg border bg-secondary/30">
-                  <ContributionGrid activities={mockActivities} />
+                  <ContributionGrid activities={realActivities} />
                 </div>
                 
                 <div>
@@ -591,7 +610,7 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
                     История активности
                   </h3>
                   <div className="space-y-3">
-                    {mockActivities.slice(0, 20).map(activity => (
+                    {realActivities.slice(0, 20).map(activity => (
                       <div key={activity.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-secondary/30 transition-colors">
                         <div className={cn(
                           'w-8 h-8 rounded-full flex items-center justify-center',

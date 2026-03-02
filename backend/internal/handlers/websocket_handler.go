@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,11 +13,37 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+var allowedOrigins = map[string]bool{}
+
+func init() {
+	// Load allowed origins from CORS_ORIGINS env var (shared with HTTP CORS)
+	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
+		for _, origin := range strings.Split(origins, ",") {
+			allowedOrigins[strings.TrimSpace(origin)] = true
+		}
+	}
+	// Also support WS-specific overrides
+	if origins := os.Getenv("WS_ALLOWED_ORIGINS"); origins != "" {
+		for _, origin := range strings.Split(origins, ",") {
+			allowedOrigins[strings.TrimSpace(origin)] = true
+		}
+	}
+	// Always allow localhost for development
+	if os.Getenv("ENVIRONMENT") != "production" {
+		allowedOrigins["http://localhost:5173"] = true
+		allowedOrigins["http://localhost:3000"] = true
+	}
+}
+
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		origin := r.Header.Get("Origin")
+		if origin == "" {
+			return true // Allow non-browser clients
+		}
+		return allowedOrigins[origin]
 	},
 }
 
@@ -29,6 +57,7 @@ type Hub struct {
 	broadcast  chan *Message
 	register   chan *Client
 	unregister chan *Client
+	locks      map[string]map[string]uuid.UUID // room -> elementId -> userID
 	mutex      sync.RWMutex
 }
 
@@ -80,6 +109,7 @@ func NewHub() *Hub {
 		broadcast:  make(chan *Message, 256),
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
+		locks:      make(map[string]map[string]uuid.UUID),
 	}
 }
 
@@ -322,6 +352,13 @@ func (c *Client) readPump() {
 		msg.From = c.userID
 		msg.Timestamp = time.Now()
 
+		// Extract room from payload for proper room-based routing
+		if msg.Payload != nil {
+			if room, ok := msg.Payload["room"].(string); ok && msg.Room == "" {
+				msg.Room = room
+			}
+		}
+
 		c.handleMessage(&msg)
 	}
 }
@@ -408,6 +445,75 @@ func (c *Client) handleMessage(msg *Message) {
 
 	case "sync_response":
 		c.hub.broadcast <- msg
+
+	case "element_lock":
+		room := msg.Room
+		elementId, _ := msg.Payload["elementId"].(string)
+		if room != "" && elementId != "" {
+			c.hub.mutex.Lock()
+			if _, ok := c.hub.locks[room]; !ok {
+				c.hub.locks[room] = make(map[string]uuid.UUID)
+			}
+			existingOwner, alreadyLocked := c.hub.locks[room][elementId]
+			success := !alreadyLocked || existingOwner == c.userID
+			if success {
+				c.hub.locks[room][elementId] = c.userID
+			}
+			c.hub.mutex.Unlock()
+
+			// Send response to requester
+			response := &Message{
+				Type:      "element_lock_response",
+				Room:      room,
+				Timestamp: time.Now(),
+				Payload: map[string]interface{}{
+					"elementId": elementId,
+					"success":   success,
+				},
+			}
+			data, _ := json.Marshal(response)
+			c.send <- data
+
+			// Broadcast lock to room
+			if success {
+				broadcastMsg := &Message{
+					Type:      "element_locked",
+					Room:      room,
+					From:      c.userID,
+					Timestamp: time.Now(),
+					Payload: map[string]interface{}{
+						"elementId": elementId,
+						"userId":    c.userID,
+					},
+				}
+				c.hub.broadcast <- broadcastMsg
+			}
+		}
+
+	case "element_unlock":
+		room := msg.Room
+		elementId, _ := msg.Payload["elementId"].(string)
+		if room != "" && elementId != "" {
+			c.hub.mutex.Lock()
+			if roomLocks, ok := c.hub.locks[room]; ok {
+				if owner, locked := roomLocks[elementId]; locked && owner == c.userID {
+					delete(roomLocks, elementId)
+				}
+			}
+			c.hub.mutex.Unlock()
+
+			// Broadcast unlock to room
+			broadcastMsg := &Message{
+				Type:      "element_unlocked",
+				Room:      room,
+				From:      c.userID,
+				Timestamp: time.Now(),
+				Payload: map[string]interface{}{
+					"elementId": elementId,
+				},
+			}
+			c.hub.broadcast <- broadcastMsg
+		}
 
 	case "ping":
 		response := &Message{

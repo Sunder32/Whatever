@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -57,6 +59,7 @@ func DefaultLoggerConfig() LoggerConfig {
 		LogRequestBody:  false,
 		LogResponseBody: false,
 		MaxBodySize:     4096,
+		Output:          os.Stdout,
 	}
 }
 
@@ -163,7 +166,7 @@ func sanitizeBody(body map[string]interface{}) {
 	}
 
 	for key, value := range body {
-		lowerKey := key
+		lowerKey := strings.ToLower(key)
 		for _, sensitive := range sensitiveFields {
 			if lowerKey == sensitive {
 				body[key] = "[REDACTED]"
@@ -303,8 +306,15 @@ func SecurityHeaders() gin.HandlerFunc {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("X-XSS-Protection", "1; mode=block")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
-		c.Header("Content-Security-Policy", "default-src 'self'")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+		c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws: wss:; frame-ancestors 'none';")
+
+		// Prevent caching of API responses containing sensitive data
+		if len(c.Request.URL.Path) > 4 && c.Request.URL.Path[:4] == "/api" {
+			c.Header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+			c.Header("Pragma", "no-cache")
+		}
 
 		c.Next()
 	}

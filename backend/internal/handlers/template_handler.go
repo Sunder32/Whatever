@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -101,15 +102,46 @@ func (h *TemplateHandler) GetByID(c *gin.Context) {
 
 	t.ID = id.String()
 
-	// Increment usage count
-	_, _ = h.pool.Exec(c.Request.Context(), `
-		UPDATE templates SET usage_count = usage_count + 1 WHERE id = $1
-	`, id)
-
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data":    t,
 	})
+}
+
+// UseTemplate increments usage_count when a template is actually applied
+func (h *TemplateHandler) UseTemplate(c *gin.Context) {
+	idStr := c.Param("id")
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid template ID",
+		})
+		return
+	}
+
+	result, err := h.pool.Exec(c.Request.Context(), `
+		UPDATE templates SET usage_count = usage_count + 1 WHERE id = $1 AND is_public = true
+	`, id)
+	if err != nil || result.RowsAffected() == 0 {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "Template not found",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+	})
+}
+
+// escapeLikePattern escapes special LIKE/ILIKE characters
+func escapeLikePattern(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
 }
 
 // GetCategories returns all available template categories

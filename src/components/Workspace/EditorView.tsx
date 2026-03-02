@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { 
   ArrowLeft, 
   Save, 
@@ -13,7 +13,8 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  HardDrive
+  HardDrive,
+  FileDown
 } from 'lucide-react'
 import { 
   Canvas, 
@@ -50,11 +51,14 @@ export function EditorView({ projectId, onBack }: EditorViewProps) {
   const [shareOpen, setShareOpen] = useState(false)
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 })
   const [storageMode, setStorageMode] = useState<'local' | 'cloud' | 'syncing'>('local')
+  const [isDragOver, setIsDragOver] = useState(false)
+  const dragCounter = useRef(0)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
   
   const file = useDiagramStore(state => state.file)
   const initNewFile = useDiagramStore(state => state.initNewFile)
   const loadProjectFile = useDiagramStore(state => state.loadProjectFile)
+  const loadFile = useDiagramStore(state => state.loadFile)
   const hasUnsavedChanges = useAppStore(state => state.hasUnsavedChanges)
   const isSyncing = useAppStore(state => state.isSyncing)
   const getProjectById = useProjectStore(state => state.getProjectById)
@@ -116,8 +120,75 @@ export function EditorView({ projectId, onBack }: EditorViewProps) {
     return () => window.removeEventListener('resize', updateSize)
   }, [])
   
+  // File drag-and-drop handlers
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current++
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDragOver(true)
+    }
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    dragCounter.current--
+    if (dragCounter.current === 0) {
+      setIsDragOver(false)
+    }
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragOver(false)
+    dragCounter.current = 0
+
+    const droppedFiles = Array.from(e.dataTransfer.files)
+    const schemaFile = droppedFiles.find(f => 
+      f.name.endsWith('.wtv') || f.name.endsWith('.qwe') || f.name.endsWith('.json')
+    )
+    if (!schemaFile) return
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string
+        const parsed = JSON.parse(content)
+        if (parsed && (parsed.content || parsed.metadata)) {
+          loadFile(parsed)
+        }
+      } catch {
+        console.warn('Failed to parse dropped file')
+      }
+    }
+    reader.readAsText(schemaFile)
+  }, [loadFile])
+  
   return (
-    <div className="flex flex-col h-full bg-background">
+    <div
+      className="flex flex-col h-full bg-background relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drop overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 z-50 bg-primary/10 border-2 border-dashed border-primary rounded-lg flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-3 bg-popover/95 p-8 rounded-xl shadow-2xl">
+            <FileDown size={48} className="text-primary" />
+            <p className="text-lg font-medium">Перетащите файл сюда</p>
+            <p className="text-sm text-muted-foreground">.wtv, .qwe или .json</p>
+          </div>
+        </div>
+      )}
       {/* Editor header */}
       <header className="flex items-center justify-between px-4 h-12 bg-background border-b shrink-0">
         <div className="flex items-center gap-3">

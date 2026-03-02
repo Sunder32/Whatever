@@ -574,6 +574,64 @@ export function Inspector() {
           />
         </section>
         
+        {/* Shadow Section */}
+        <section>
+          <h3 className="text-[10px] uppercase tracking-wider text-muted-foreground/70 mb-2">
+            {t('inspector.shadow', 'Тень')}
+          </h3>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <label className="text-[10px] text-muted-foreground/60 w-16">{t('inspector.shadowColor', 'Цвет')}</label>
+              <input
+                type="color"
+                value={selectedNode.style.shadowColor || '#000000'}
+                onChange={(e) => handleStyleChange('shadowColor', e.target.value)}
+                className="w-6 h-6 rounded cursor-pointer border-0"
+              />
+              <input
+                type="text"
+                value={selectedNode.style.shadowColor || '#000000'}
+                onChange={(e) => handleStyleChange('shadowColor', e.target.value)}
+                className="flex-1 text-[10px] bg-secondary/50 rounded px-1.5 py-0.5 border-0 outline-none font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground/60">
+                {t('inspector.shadowBlur', 'Размытие')}: {selectedNode.style.shadowBlur || 0}px
+              </label>
+              <input
+                type="range"
+                min="0"
+                max="50"
+                step="1"
+                value={selectedNode.style.shadowBlur || 0}
+                onChange={(e) => handleStyleChange('shadowBlur', parseFloat(e.target.value))}
+                className="w-full accent-primary"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] text-muted-foreground/60">{t('inspector.shadowOffsetX', 'X')}</label>
+                <input
+                  type="number"
+                  value={selectedNode.style.shadowOffsetX || 0}
+                  onChange={(e) => handleStyleChange('shadowOffsetX', parseFloat(e.target.value))}
+                  className="w-full text-[10px] bg-secondary/50 rounded px-1.5 py-0.5 border-0 outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] text-muted-foreground/60">{t('inspector.shadowOffsetY', 'Y')}</label>
+                <input
+                  type="number"
+                  value={selectedNode.style.shadowOffsetY || 0}
+                  onChange={(e) => handleStyleChange('shadowOffsetY', parseFloat(e.target.value))}
+                  className="w-full text-[10px] bg-secondary/50 rounded px-1.5 py-0.5 border-0 outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+        
         {/* Linked Data Section */}
         {selectedNode.linkedData && selectedNode.linkedData.length > 0 && (
           <section className="border-t border-border/30 pt-4 mt-4">

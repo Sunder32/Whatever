@@ -249,7 +249,7 @@ func (r *SyncRepository) CreateAuditLog(ctx context.Context, log *models.AuditLo
 	}
 
 	query := `
-		INSERT INTO audit_log (
+		INSERT INTO audit_logs (
 			id, user_id, action, entity_type, entity_id, old_values, new_values,
 			ip_address, user_agent, device_info, created_at, metadata
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)

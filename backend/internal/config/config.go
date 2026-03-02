@@ -1,6 +1,9 @@
 package config
 
 import (
+	"log"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -17,12 +20,20 @@ type Config struct {
 	SyncInterval      time.Duration
 	PythonServiceURL  string
 	RedisAddress      string
+	CORSOrigins       []string
+	Environment       string
 }
 
 func Load() (*Config, error) {
 	viper.SetDefault("PORT", "9000")
 	viper.SetDefault("DATABASE_URL", "postgresql://diagram:diagram_secret@localhost:5432/diagram_db?sslmode=disable")
 	viper.SetDefault("JWT_SECRET", "your-super-secret-jwt-key-change-in-production")
+
+	// Warn if using default JWT secret in production
+	env := os.Getenv("ENVIRONMENT")
+	if (env == "production" || env == "prod") && viper.GetString("JWT_SECRET") == "your-super-secret-jwt-key-change-in-production" {
+		log.Fatal("FATAL: Using default JWT secret in production! Set JWT_SECRET environment variable.")
+	}
 	viper.SetDefault("JWT_EXPIRATION", "15m")
 	viper.SetDefault("REFRESH_TOKEN_EXPIRATION", "7d")
 	viper.SetDefault("LOG_LEVEL", "info")
@@ -30,6 +41,8 @@ func Load() (*Config, error) {
 	viper.SetDefault("SYNC_INTERVAL", "30s")
 	viper.SetDefault("PYTHON_SERVICE_URL", "http://localhost:5000")
 	viper.SetDefault("REDIS_ADDRESS", "localhost:6379")
+	viper.SetDefault("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000")
+	viper.SetDefault("ENVIRONMENT", "development")
 
 	viper.AutomaticEnv()
 
@@ -48,6 +61,16 @@ func Load() (*Config, error) {
 		syncInterval = 30 * time.Second
 	}
 
+	// Parse CORS origins from comma-separated string
+	corsOriginsStr := viper.GetString("CORS_ORIGINS")
+	corsOrigins := []string{}
+	for _, o := range strings.Split(corsOriginsStr, ",") {
+		o = strings.TrimSpace(o)
+		if o != "" {
+			corsOrigins = append(corsOrigins, o)
+		}
+	}
+
 	return &Config{
 		Port:              viper.GetString("PORT"),
 		DatabaseURL:       viper.GetString("DATABASE_URL"),
@@ -59,5 +82,7 @@ func Load() (*Config, error) {
 		SyncInterval:      syncInterval,
 		PythonServiceURL:  viper.GetString("PYTHON_SERVICE_URL"),
 		RedisAddress:      viper.GetString("REDIS_ADDRESS"),
+		CORSOrigins:       corsOrigins,
+		Environment:       viper.GetString("ENVIRONMENT"),
 	}, nil
 }

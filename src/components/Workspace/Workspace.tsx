@@ -105,7 +105,7 @@ export function Workspace({ initialView = 'dashboard' }: WorkspaceProps) {
     // TODO: Apply server template content (nodes, edges, layers) to the project
     // This will require updating the diagram store after project is loaded in editor
     // For now we just open the editor - template content can be applied when loading
-    console.log('Template content to apply:', serverTemplate.content)
+    if (import.meta.env.DEV) console.debug('Template content to apply:', serverTemplate.content)
     setEditingProjectId(newProject.id)
     setCurrentView('editor')
   }

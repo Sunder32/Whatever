@@ -53,7 +53,10 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
     fetchProjects, 
     getOwnProjects,
     getFollowingProjects,
-    deleteProject
+    deleteProject,
+    duplicateProject,
+    toggleProjectVisibility,
+    generateShareLink
   } = useProjectStore()
   const [feedFilter, setFeedFilter] = useState<'all' | 'own' | 'following'>('all')
   const { openProfile } = useProfileModal()
@@ -89,7 +92,7 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
           setServerTemplates(response.data)
         } else {
           // Fallback to local templates if server returns empty
-          console.log('Using local templates as fallback')
+          if (import.meta.env.DEV) console.debug('Using local templates as fallback')
         }
       } catch (error) {
         console.error('Failed to load templates from server:', error)
@@ -347,9 +350,16 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
                           Открыть
                         </button>
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation()
-                            // TODO: Implement duplicate
+                            try {
+                              const duplicated = await duplicateProject(project.id)
+                              if (duplicated) {
+                                onOpenProject(duplicated.id)
+                              }
+                            } catch (err) {
+                              console.error('Failed to duplicate project:', err)
+                            }
                             setProjectMenuOpen(null)
                           }}
                           className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"
@@ -358,9 +368,15 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
                           Дублировать
                         </button>
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation()
-                            // TODO: Implement share
+                            try {
+                              const link = await generateShareLink(project.id)
+                              await navigator.clipboard.writeText(link)
+                              alert('Ссылка скопирована в буфер обмена')
+                            } catch (err) {
+                              console.error('Failed to generate share link:', err)
+                            }
                             setProjectMenuOpen(null)
                           }}
                           className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"
@@ -372,9 +388,13 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
                           <>
                             <div className="border-t border-border my-1" />
                             <button
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation()
-                                // TODO: Implement visibility toggle
+                                try {
+                                  await toggleProjectVisibility(project.id)
+                                } catch (err) {
+                                  console.error('Failed to toggle visibility:', err)
+                                }
                                 setProjectMenuOpen(null)
                               }}
                               className="flex items-center gap-2 w-full px-3 py-2 text-sm hover:bg-accent transition-colors"

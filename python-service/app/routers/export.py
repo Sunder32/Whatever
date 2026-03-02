@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
 import io
 
@@ -10,12 +10,13 @@ from app.models import (
     ExportFormat, DiagramContent
 )
 from app.services import export_service
+from app.auth import get_current_user
 
 router = APIRouter(prefix="/export", tags=["Export"])
 
 
 @router.post("/", response_model=ExportResponse)
-async def export_diagram(request: ExportRequest) -> ExportResponse:
+async def export_diagram(request: ExportRequest, _user: dict = Depends(get_current_user)) -> ExportResponse:
     result = await export_service.export(request)
     if not result.success:
         raise HTTPException(
@@ -26,7 +27,7 @@ async def export_diagram(request: ExportRequest) -> ExportResponse:
 
 
 @router.post("/download")
-async def export_and_download(request: ExportRequest):
+async def export_and_download(request: ExportRequest, _user: dict = Depends(get_current_user)):
     result = await export_service.export(request)
     
     if not result.success:
@@ -45,7 +46,7 @@ async def export_and_download(request: ExportRequest):
 
 
 @router.post("/png")
-async def export_png(request: ExportRequest):
+async def export_png(request: ExportRequest, _user: dict = Depends(get_current_user)):
     request.format = ExportFormat.PNG
     result = await export_service.export(request)
     
@@ -65,7 +66,7 @@ async def export_png(request: ExportRequest):
 
 
 @router.post("/svg")
-async def export_svg(request: ExportRequest):
+async def export_svg(request: ExportRequest, _user: dict = Depends(get_current_user)):
     request.format = ExportFormat.SVG
     result = await export_service.export(request)
     
@@ -85,7 +86,7 @@ async def export_svg(request: ExportRequest):
 
 
 @router.post("/pdf")
-async def export_pdf(request: ExportRequest):
+async def export_pdf(request: ExportRequest, _user: dict = Depends(get_current_user)):
     request.format = ExportFormat.PDF
     result = await export_service.export(request)
     
@@ -105,7 +106,7 @@ async def export_pdf(request: ExportRequest):
 
 
 @router.post("/jpeg")
-async def export_jpeg(request: ExportRequest):
+async def export_jpeg(request: ExportRequest, _user: dict = Depends(get_current_user)):
     request.format = ExportFormat.JPEG
     result = await export_service.export(request)
     
@@ -125,7 +126,7 @@ async def export_jpeg(request: ExportRequest):
 
 
 @router.post("/webp")
-async def export_webp(request: ExportRequest):
+async def export_webp(request: ExportRequest, _user: dict = Depends(get_current_user)):
     request.format = ExportFormat.WEBP
     result = await export_service.export(request)
     
@@ -145,7 +146,7 @@ async def export_webp(request: ExportRequest):
 
 
 @router.post("/thumbnail", response_model=ThumbnailResponse)
-async def generate_thumbnail(request: ThumbnailRequest) -> ThumbnailResponse:
+async def generate_thumbnail(request: ThumbnailRequest, _user: dict = Depends(get_current_user)) -> ThumbnailResponse:
     result = await export_service.generate_thumbnail(request)
     if not result.success:
         raise HTTPException(

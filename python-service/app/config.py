@@ -1,7 +1,9 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import Optional
 from functools import lru_cache
+import tempfile
+import os
 
 
 class Settings(BaseSettings):
@@ -44,13 +46,23 @@ class Settings(BaseSettings):
     max_file_size: int = 50 * 1024 * 1024
     allowed_image_types: list[str] = ["image/png", "image/jpeg", "image/svg+xml", "image/webp"]
     
-    export_temp_dir: str = "/tmp/diagram-exports"
+    export_temp_dir: str = Field(
+        default="",
+        description="Temp dir for exports (auto-detected if empty)"
+    )
     export_max_width: int = 8192
     export_max_height: int = 8192
     export_default_dpi: int = 150
     
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:9000"]
     cors_allow_credentials: bool = True
+
+    @field_validator("cors_origins", mode="before")
+    @classmethod
+    def parse_cors_origins(cls, v):
+        if isinstance(v, str):
+            return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return v
     
     log_level: str = "INFO"
     log_format: str = "json"

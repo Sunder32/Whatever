@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { authApi } from '@/api'
-import { eventBus, AppEvents } from '@/services/eventBus'
+import { eventBus, AppEvents, webSocketService, getWebSocketUrl } from '@/services'
 import type { User } from '@/types'
 
 interface UserPreferencesPartial {
@@ -59,6 +59,13 @@ export const useAuthStore = create<AuthState>()(
           
           // Emit login event - projectStore will subscribe to this
           eventBus.emit(AppEvents.AUTH_LOGIN, { userId: user.id })
+          
+          // Initialize WebSocket connection
+          const token = localStorage.getItem('accessToken')
+          if (token) {
+            webSocketService.init(getWebSocketUrl(), token)
+            webSocketService.connect().catch(err => console.warn('WebSocket connect failed:', err))
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Ошибка входа'
           set({ isLoading: false, error: message })
@@ -84,6 +91,13 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false,
             error: null,
           })
+          
+          // Initialize WebSocket connection after registration
+          const token = localStorage.getItem('accessToken')
+          if (token) {
+            webSocketService.init(getWebSocketUrl(), token)
+            webSocketService.connect().catch(err => console.warn('WebSocket connect failed:', err))
+          }
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Ошибка регистрации'
           set({ isLoading: false, error: message })
@@ -93,6 +107,9 @@ export const useAuthStore = create<AuthState>()(
 
       logout: async () => {
         set({ isLoading: true })
+        
+        // Disconnect WebSocket before logout
+        webSocketService.disconnect()
         
         try {
           await authApi.logout()
@@ -190,6 +207,13 @@ export const useAuthStore = create<AuthState>()(
           
           if (response.success && response.data) {
             set({ user: response.data, isAuthenticated: true })
+            
+            // Initialize WebSocket connection on auth check
+            const token = localStorage.getItem('accessToken')
+            if (token) {
+              webSocketService.init(getWebSocketUrl(), token)
+              webSocketService.connect().catch(err => console.warn('WebSocket connect failed:', err))
+            }
             
             // Emit event to fetch following data
             eventBus.emit(AppEvents.FETCH_FOLLOWING)

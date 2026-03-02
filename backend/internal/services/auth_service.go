@@ -34,9 +34,11 @@ type TokenPair struct {
 }
 
 type Claims struct {
-	UserID   uuid.UUID `json:"userId"`
-	Username string    `json:"username"`
-	Email    string    `json:"email"`
+	UserID    uuid.UUID `json:"userId"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	TokenType string    `json:"tokenType"` // "access" or "refresh"
 	jwt.RegisteredClaims
 }
 
@@ -132,6 +134,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*T
 		return nil, err
 	}
 
+	// Only allow refresh tokens to be used for refreshing
+	if claims.TokenType != "refresh" {
+		return nil, ErrInvalidToken
+	}
+
 	user, err := s.userRepo.GetByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, ErrUserNotFound
@@ -177,9 +184,11 @@ func (s *AuthService) generateTokens(user *models.User) (*TokenPair, error) {
 	expiresAt := now.Add(s.jwtExpiration)
 
 	accessClaims := &Claims{
-		UserID:   user.ID,
-		Username: user.Name, // Use Name field
-		Email:    user.Email,
+		UserID:    user.ID,
+		Username:  user.Name,
+		Email:     user.Email,
+		Role:      user.Role,
+		TokenType: "access",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -197,9 +206,11 @@ func (s *AuthService) generateTokens(user *models.User) (*TokenPair, error) {
 
 	refreshExpiresAt := now.Add(7 * 24 * time.Hour)
 	refreshClaims := &Claims{
-		UserID:   user.ID,
-		Username: user.Name,
-		Email:    user.Email,
+		UserID:    user.ID,
+		Username:  user.Name,
+		Email:     user.Email,
+		Role:      user.Role,
+		TokenType: "refresh",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(refreshExpiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),

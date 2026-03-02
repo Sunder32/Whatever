@@ -1,40 +1,20 @@
 import { useRef, useEffect, useCallback, useState } from 'react'
-import { Stage, Layer, Rect, Ellipse, Line, RegularPolygon, Transformer, Text, Group, Arrow, Circle as KonvaCircle, Image as KonvaImage } from 'react-konva'
-import { Trash2, Copy, Clipboard, Eye, EyeOff, Lock, Unlock, Layers, ArrowUp, ArrowDown, Palette } from 'lucide-react'
+import { Stage, Layer, Line, Transformer, Group, Arrow } from 'react-konva'
 import type Konva from 'konva'
 import { useDiagramStore, useAppStore } from '@/stores'
-import type { DiagramNode, DiagramEdge, AnchorPosition } from '@/types'
+import type { DiagramNode, AnchorPosition } from '@/types'
 import { snapToGrid, getAnchorPosition } from '@/utils'
 import { CanvasContextMenu } from './CanvasContextMenu'
 import { MiniMap } from './MiniMap'
+import { ShapeRenderer } from './ShapeRenderer'
+import { EdgeRenderer } from './EdgeRenderer'
+import { AnchorPoints } from './AnchorPoints'
+import { GridLayer } from './GridLayer'
+import { NodeContextMenu } from './NodeContextMenu'
 
 interface CanvasProps {
   width: number
   height: number
-}
-
-// Hook to load image from data URL
-const useImage = (imageData: string | undefined): HTMLImageElement | null => {
-  const [image, setImage] = useState<HTMLImageElement | null>(null)
-  
-  useEffect(() => {
-    if (!imageData) {
-      setImage(null)
-      return
-    }
-    
-    const img = new window.Image()
-    img.onload = () => setImage(img)
-    img.onerror = () => setImage(null)
-    img.src = imageData
-    
-    return () => {
-      img.onload = null
-      img.onerror = null
-    }
-  }, [imageData])
-  
-  return image
 }
 
 // Connection creation state
@@ -43,69 +23,6 @@ interface ConnectionState {
   sourceId: string | null
   sourceAnchor: AnchorPosition | null
   tempTargetPos: { x: number; y: number } | null
-}
-
-// Image node content component (needs to be separate to use hooks)
-interface ImageNodeContentProps {
-  node: DiagramNode
-  baseStyle: {
-    fill: string
-    stroke: string
-    strokeWidth: number
-    shadowColor: string
-    shadowBlur: number
-    shadowOffsetX: number
-    shadowOffsetY: number
-    opacity: number
-  }
-}
-
-function ImageNodeContent({ node, baseStyle }: ImageNodeContentProps) {
-  const image = useImage(node.imageData)
-  
-  if (!image) {
-    // Placeholder while image loads or if no image
-    return (
-      <>
-        <Rect
-          width={node.size.width}
-          height={node.size.height}
-          fill="#f3f4f6"
-          stroke={baseStyle.stroke}
-          strokeWidth={baseStyle.strokeWidth}
-          cornerRadius={4}
-        />
-        <Text
-          x={0}
-          y={node.size.height / 2 - 10}
-          width={node.size.width}
-          text={node.imageData ? 'Загрузка...' : '🖼️ Нет изображения'}
-          fontSize={14}
-          fill="#9ca3af"
-          align="center"
-        />
-      </>
-    )
-  }
-  
-  return (
-    <>
-      <KonvaImage
-        image={image}
-        width={node.size.width}
-        height={node.size.height}
-        shadowColor={baseStyle.shadowColor}
-        shadowBlur={baseStyle.shadowBlur}
-      />
-      <Rect
-        width={node.size.width}
-        height={node.size.height}
-        fill="transparent"
-        stroke={baseStyle.stroke}
-        strokeWidth={baseStyle.strokeWidth}
-      />
-    </>
-  )
 }
 
 export function Canvas({ width, height }: CanvasProps) {
@@ -128,6 +45,9 @@ export function Canvas({ width, height }: CanvasProps) {
   // Freehand drawing state
   const [isDrawingFreehand, setIsDrawingFreehand] = useState(false)
   const [freehandPoints, setFreehandPoints] = useState<number[]>([])
+  
+  // Smart alignment guides
+  const [guides, setGuides] = useState<{ x: number; y: number; orientation: 'H' | 'V' }[]>([])
   
   // Right-click pan state
   const [isRightClickPanning, setIsRightClickPanning] = useState(false)
@@ -170,6 +90,66 @@ export function Canvas({ width, height }: CanvasProps) {
   const zoom = canvasState?.zoom ?? 1
   const pan = canvasState?.pan ?? { x: 0, y: 0 }
   const grid = canvasState?.grid
+
+  // Smart guides: compute alignment guides during drag
+  const GUIDE_SNAP_THRESHOLD = 5 // px
+  const computeSmartGuides = useCallback((draggedId: string, dragX: number, dragY: number) => {
+    const draggedNode = nodes.find(n => n.id === draggedId)
+    if (!draggedNode) return { guides: [] as { x: number; y: number; orientation: 'H' | 'V' }[], snapX: dragX, snapY: dragY }
+
+    const dW = draggedNode.size.width
+    const dH = draggedNode.size.height
+    // Dragged node edges & center
+    const dLeft = dragX, dRight = dragX + dW, dCenterX = dragX + dW / 2
+    const dTop = dragY, dBottom = dragY + dH, dCenterY = dragY + dH / 2
+
+    const newGuides: { x: number; y: number; orientation: 'H' | 'V' }[] = []
+    let snapX = dragX, snapY = dragY
+    let closestDx = GUIDE_SNAP_THRESHOLD + 1
+    let closestDy = GUIDE_SNAP_THRESHOLD + 1
+
+    for (const other of nodes) {
+      if (other.id === draggedId || !other.visible) continue
+      const oL = other.position.x, oR = other.position.x + other.size.width, oCX = other.position.x + other.size.width / 2
+      const oT = other.position.y, oB = other.position.y + other.size.height, oCY = other.position.y + other.size.height / 2
+
+      // Vertical guides (align X positions)
+      const vPairs: [number, number][] = [
+        [dLeft, oL], [dLeft, oR], [dLeft, oCX],
+        [dRight, oL], [dRight, oR], [dRight, oCX],
+        [dCenterX, oCX], [dCenterX, oL], [dCenterX, oR],
+      ]
+      for (const [dVal, oVal] of vPairs) {
+        const diff = Math.abs(dVal - oVal)
+        if (diff < GUIDE_SNAP_THRESHOLD && diff < closestDx) {
+          closestDx = diff
+          snapX = dragX + (oVal - dVal)
+          newGuides.push({ x: oVal, y: Math.min(dTop, oT), orientation: 'V' })
+        }
+      }
+
+      // Horizontal guides (align Y positions)
+      const hPairs: [number, number][] = [
+        [dTop, oT], [dTop, oB], [dTop, oCY],
+        [dBottom, oT], [dBottom, oB], [dBottom, oCY],
+        [dCenterY, oCY], [dCenterY, oT], [dCenterY, oB],
+      ]
+      for (const [dVal, oVal] of hPairs) {
+        const diff = Math.abs(dVal - oVal)
+        if (diff < GUIDE_SNAP_THRESHOLD && diff < closestDy) {
+          closestDy = diff
+          snapY = dragY + (oVal - dVal)
+          newGuides.push({ x: Math.min(dLeft, oL), y: oVal, orientation: 'H' })
+        }
+      }
+    }
+
+    // Deduplicate guides by keeping only the best match per orientation
+    const bestV = newGuides.filter(g => g.orientation === 'V').slice(-1)
+    const bestH = newGuides.filter(g => g.orientation === 'H').slice(-1)
+
+    return { guides: [...bestV, ...bestH], snapX, snapY }
+  }, [nodes])
   
   // Generate thumbnail when nodes/edges change (debounced)
   useEffect(() => {
@@ -768,10 +748,19 @@ export function Canvas({ width, height }: CanvasProps) {
       },
       onDragMove: (e: Konva.KonvaEventObject<DragEvent>) => {
         e.cancelBubble = true  // Prevent Stage from moving
+        // Smart alignment guides
+        const target = e.target
+        const { guides: newGuides, snapX, snapY } = computeSmartGuides(node.id, target.x(), target.y())
+        if (newGuides.length > 0) {
+          target.x(snapX)
+          target.y(snapY)
+        }
+        setGuides(newGuides)
       },
       onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => {
         e.cancelBubble = true
         setIsDragging(false)
+        setGuides([]) // Clear guides on drop
         handleDragEnd(e, node.id)
         const stage = stageRef.current
         if (stage) stage.container().style.cursor = 'default'
@@ -828,337 +817,6 @@ export function Canvas({ width, height }: CanvasProps) {
       opacity: node.style.opacity ?? 1,
     }
     
-    // Text element inside the shape
-    const textElement = node.text ? (
-      <Text
-        text={node.text}
-        x={0}
-        y={0}
-        width={node.size.width}
-        height={node.size.height}
-        fontSize={node.textStyle?.fontSize || 14}
-        fontFamily={node.textStyle?.fontFamily || 'Arial'}
-        fontStyle={node.textStyle?.fontStyle || 'normal'}
-        fill={node.textStyle?.color || '#1f2937'}
-        align={node.textStyle?.align || 'center'}
-        verticalAlign="middle"
-        padding={8}
-        listening={false}
-      />
-    ) : null
-    
-    // Render shape based on type with Group wrapper
-    const renderShape = () => {
-      // Separate cornerRadius for Rect only
-      const { ...baseStyle } = shapeStyle
-      
-      switch (node.type) {
-        case 'rectangle':
-          return (
-            <>
-              <Rect
-                width={node.size.width}
-                height={node.size.height}
-                cornerRadius={node.style.cornerRadius || 8}
-                {...baseStyle}
-              />
-              {textElement}
-            </>
-          )
-        case 'ellipse':
-          return (
-            <>
-              <Ellipse
-                x={node.size.width / 2}
-                y={node.size.height / 2}
-                radiusX={node.size.width / 2}
-                radiusY={node.size.height / 2}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                shadowColor={baseStyle.shadowColor}
-                shadowBlur={baseStyle.shadowBlur}
-                shadowOffsetX={baseStyle.shadowOffsetX}
-                shadowOffsetY={baseStyle.shadowOffsetY}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'diamond':
-          return (
-            <>
-              <RegularPolygon
-                x={node.size.width / 2}
-                y={node.size.height / 2}
-                sides={4}
-                radius={Math.min(node.size.width, node.size.height) / 2}
-                rotation={45}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                shadowColor={baseStyle.shadowColor}
-                shadowBlur={baseStyle.shadowBlur}
-                shadowOffsetX={baseStyle.shadowOffsetX}
-                shadowOffsetY={baseStyle.shadowOffsetY}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'triangle':
-          return (
-            <>
-              <RegularPolygon
-                x={node.size.width / 2}
-                y={node.size.height / 2}
-                sides={3}
-                radius={Math.min(node.size.width, node.size.height) / 2}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                shadowColor={baseStyle.shadowColor}
-                shadowBlur={baseStyle.shadowBlur}
-                shadowOffsetX={baseStyle.shadowOffsetX}
-                shadowOffsetY={baseStyle.shadowOffsetY}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'star':
-          return (
-            <>
-              <Line
-                points={(() => {
-                  const cx = node.size.width / 2
-                  const cy = node.size.height / 2
-                  const outerR = Math.min(node.size.width, node.size.height) / 2
-                  const innerR = outerR * 0.4
-                  const points: number[] = []
-                  for (let i = 0; i < 10; i++) {
-                    const angle = (i * Math.PI) / 5 - Math.PI / 2
-                    const r = i % 2 === 0 ? outerR : innerR
-                    points.push(cx + r * Math.cos(angle), cy + r * Math.sin(angle))
-                  }
-                  return points
-                })()}
-                closed
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'hexagon':
-          return (
-            <>
-              <RegularPolygon
-                x={node.size.width / 2}
-                y={node.size.height / 2}
-                sides={6}
-                radius={Math.min(node.size.width, node.size.height) / 2}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                shadowColor={baseStyle.shadowColor}
-                shadowBlur={baseStyle.shadowBlur}
-                shadowOffsetX={baseStyle.shadowOffsetX}
-                shadowOffsetY={baseStyle.shadowOffsetY}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'cylinder':
-          return (
-            <>
-              {/* Cylinder body */}
-              <Rect
-                x={0}
-                y={node.size.height * 0.1}
-                width={node.size.width}
-                height={node.size.height * 0.8}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {/* Top ellipse */}
-              <Ellipse
-                x={node.size.width / 2}
-                y={node.size.height * 0.1}
-                radiusX={node.size.width / 2}
-                radiusY={node.size.height * 0.1}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {/* Bottom ellipse (half visible) */}
-              <Ellipse
-                x={node.size.width / 2}
-                y={node.size.height * 0.9}
-                radiusX={node.size.width / 2}
-                radiusY={node.size.height * 0.1}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'cloud':
-          return (
-            <>
-              <Line
-                points={(() => {
-                  const w = node.size.width
-                  const h = node.size.height
-                  // Simple cloud shape using bezier-like points
-                  return [
-                    w * 0.2, h * 0.6,
-                    w * 0.1, h * 0.4,
-                    w * 0.2, h * 0.25,
-                    w * 0.35, h * 0.2,
-                    w * 0.5, h * 0.15,
-                    w * 0.65, h * 0.2,
-                    w * 0.8, h * 0.25,
-                    w * 0.9, h * 0.4,
-                    w * 0.85, h * 0.6,
-                    w * 0.7, h * 0.75,
-                    w * 0.5, h * 0.8,
-                    w * 0.3, h * 0.75,
-                    w * 0.2, h * 0.6,
-                  ]
-                })()}
-                closed
-                tension={0.5}
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'callout':
-          return (
-            <>
-              <Line
-                points={[
-                  0, 0,
-                  node.size.width, 0,
-                  node.size.width, node.size.height * 0.75,
-                  node.size.width * 0.3, node.size.height * 0.75,
-                  node.size.width * 0.15, node.size.height,
-                  node.size.width * 0.25, node.size.height * 0.75,
-                  0, node.size.height * 0.75,
-                  0, 0,
-                ]}
-                closed
-                fill={baseStyle.fill}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'note':
-          return (
-            <>
-              {/* Note body with folded corner */}
-              <Line
-                points={[
-                  0, 0,
-                  node.size.width - 20, 0,
-                  node.size.width, 20,
-                  node.size.width, node.size.height,
-                  0, node.size.height,
-                  0, 0,
-                ]}
-                closed
-                fill={baseStyle.fill || '#ffffa5'}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {/* Folded corner */}
-              <Line
-                points={[
-                  node.size.width - 20, 0,
-                  node.size.width - 20, 20,
-                  node.size.width, 20,
-                ]}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                opacity={baseStyle.opacity}
-              />
-              {textElement}
-            </>
-          )
-        case 'container':
-          return (
-            <>
-              {/* Container with header */}
-              <Rect
-                width={node.size.width}
-                height={node.size.height}
-                cornerRadius={4}
-                fill={baseStyle.fill || 'rgba(200, 200, 200, 0.1)'}
-                stroke={baseStyle.stroke}
-                strokeWidth={baseStyle.strokeWidth}
-                strokeDash={[5, 5]}
-                opacity={baseStyle.opacity}
-              />
-              {/* Header bar */}
-              <Rect
-                width={node.size.width}
-                height={30}
-                cornerRadius={[4, 4, 0, 0]}
-                fill={baseStyle.stroke || '#666'}
-                opacity={0.3}
-              />
-              <Text
-                x={8}
-                y={6}
-                text={node.text || 'Container'}
-                fontSize={14}
-                fontStyle="bold"
-                fill={node.textStyle?.color || '#fff'}
-              />
-            </>
-          )
-        case 'freehand':
-          // Parse path data back to points
-          const pathPoints = node.pathData 
-            ? node.pathData.split(',').map(Number) 
-            : []
-          return (
-            <Line
-              points={pathPoints}
-              stroke={baseStyle.stroke || '#3b82f6'}
-              strokeWidth={node.style.strokeWidth || 3}
-              opacity={baseStyle.opacity}
-              lineCap="round"
-              lineJoin="round"
-              tension={0.5}
-              shadowColor={baseStyle.shadowColor}
-              shadowBlur={baseStyle.shadowBlur}
-            />
-          )
-        case 'image':
-          // Get image from imageData
-          return <ImageNodeContent node={node} baseStyle={baseStyle} />
-        default:
-          return null
-      }
-    }
-    
     return (
       <Group
         key={node.id}
@@ -1176,118 +834,25 @@ export function Canvas({ width, height }: CanvasProps) {
         visible={node.visible}
         {...groupHandlers}
       >
-        {renderShape()}
+        <ShapeRenderer node={node} style={shapeStyle} />
       </Group>
     )
   }
 
-  const renderEdge = (edge: DiagramEdge) => {
-    const sourceNode = nodes.find(n => n.id === edge.source)
-    const targetNode = nodes.find(n => n.id === edge.target)
-    
-    if (!sourceNode || !targetNode) return null
-    
-    const sourcePos = getAnchorPosition(
-      sourceNode.position.x,
-      sourceNode.position.y,
-      sourceNode.size.width,
-      sourceNode.size.height,
-      edge.sourceAnchor
-    )
-    
-    const targetPos = getAnchorPosition(
-      targetNode.position.x,
-      targetNode.position.y,
-      targetNode.size.width,
-      targetNode.size.height,
-      edge.targetAnchor
-    )
-    
-    const points = [sourcePos.x, sourcePos.y, targetPos.x, targetPos.y]
-    
-    // Check if edge is selected
-    const isSelected = selectedIds.includes(edge.id)
-    
-    // Modern edge styling - clean lines with subtle shadows
-    const baseStrokeWidth = edge.style.strokeWidth || 2
-    const strokeWidth = isSelected ? baseStrokeWidth + 1 : baseStrokeWidth
-    const strokeColor = isSelected ? '#60a5fa' : (edge.style.stroke || '#64748b')
-    
-    // Common event handlers for edges
-    const edgeHandlers = {
-      onClick: (e: Konva.KonvaEventObject<MouseEvent>) => {
-        e.cancelBubble = true
-        const metaPressed = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey
-        if (metaPressed) {
-          if (selectedIds.includes(edge.id)) {
-            selectElements(selectedIds.filter(id => id !== edge.id))
-          } else {
-            selectElements([...selectedIds, edge.id])
-          }
-        } else {
-          selectElements([edge.id])
-        }
-      },
-      onMouseEnter: () => {
-        const stage = stageRef.current
-        if (stage) stage.container().style.cursor = 'pointer'
-      },
-      onMouseLeave: () => {
-        const stage = stageRef.current
-        if (stage) stage.container().style.cursor = 'default'
-      },
+  // Edge selection callback for EdgeRenderer
+  const handleEdgeSelect = useCallback((e: Konva.KonvaEventObject<MouseEvent>, edgeId: string) => {
+    e.cancelBubble = true
+    const metaPressed = e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey
+    if (metaPressed) {
+      if (selectedIds.includes(edgeId)) {
+        selectElements(selectedIds.filter(id => id !== edgeId))
+      } else {
+        selectElements([...selectedIds, edgeId])
+      }
+    } else {
+      selectElements([edgeId])
     }
-    
-    // Dash patterns
-    const getDashPattern = () => {
-      if (edge.style.strokeStyle === 'dashed') return [8, 4]
-      if (edge.style.strokeStyle === 'dotted') return [2, 4]
-      return undefined
-    }
-    
-    if (edge.arrowEnd === 'arrow' || edge.type === 'arrow') {
-      return (
-        <Arrow
-          key={edge.id}
-          points={points}
-          stroke={strokeColor}
-          strokeWidth={strokeWidth}
-          opacity={1}
-          fill={strokeColor}
-          pointerLength={10}
-          pointerWidth={8}
-          lineCap="round"
-          lineJoin="round"
-          hitStrokeWidth={16}
-          dash={getDashPattern()}
-          shadowColor={isSelected ? '#3b82f6' : 'rgba(0,0,0,0.2)'}
-          shadowBlur={isSelected ? 6 : 2}
-          shadowOpacity={isSelected ? 0.6 : 0.3}
-          shadowOffsetY={1}
-          {...edgeHandlers}
-        />
-      )
-    }
-    
-    return (
-      <Line
-        key={edge.id}
-        points={points}
-        stroke={strokeColor}
-        strokeWidth={strokeWidth}
-        opacity={1}
-        lineCap="round"
-        lineJoin="round"
-        hitStrokeWidth={16}
-        dash={getDashPattern()}
-        shadowColor={isSelected ? '#3b82f6' : 'rgba(0,0,0,0.2)'}
-        shadowBlur={isSelected ? 6 : 2}
-        shadowOpacity={isSelected ? 0.6 : 0.3}
-        shadowOffsetY={1}
-        {...edgeHandlers}
-      />
-    )
-  }
+  }, [selectedIds, selectElements])
   
   // Render temporary connection line while creating
   const renderTempConnection = () => {
@@ -1409,192 +974,51 @@ export function Canvas({ width, height }: CanvasProps) {
     if (stage) stage.container().style.cursor = 'default'
   }, [connectionState, nearestTarget, currentTool, addEdge])
   
-  // Render anchor points - show ONLY when connection tool is active OR when creating connection
-  // NOT on simple hover with select tool - this prevents conflict with dragging
-  const renderAnchorPoints = (node: DiagramNode) => {
-    // Only show anchors when:
-    // 1. Creating a connection (show on all potential target nodes)
-    // 2. Using line/arrow tool AND hovering over this node
-    const isConnectionTool = currentTool === 'line' || currentTool === 'arrow'
-    const isHoveredWithConnectionTool = hoveredNodeId === node.id && isConnectionTool
-    const showAnchors = connectionState.isCreating || isHoveredWithConnectionTool
-    
-    if (!showAnchors) return null
-    
-    const anchors: AnchorPosition[] = ['top', 'right', 'bottom', 'left']
-    
-    // Check if this node is the source
-    const isSourceNode = connectionState.sourceId === node.id
-    
-    return anchors.map(anchor => {
-      const pos = getAnchorPosition(
-        node.position.x,
-        node.position.y,
-        node.size.width,
-        node.size.height,
-        anchor
-      )
-      
-      const isSourceAnchor = isSourceNode && connectionState.sourceAnchor === anchor
-      const isNearestTarget = nearestTarget?.nodeId === node.id && nearestTarget?.anchor === anchor
-      
-      // BIG hit areas for easy clicking
-      const hitRadius = 20  // Large clickable area
-      const visualRadius = isNearestTarget ? 12 : (isSourceAnchor ? 10 : 8)
-      const innerSize = isNearestTarget ? 4 : 3
-      
-      // Color scheme: soft blue, green for source, cyan glow for target
-      const outerColor = isNearestTarget ? '#22d3ee' : (isSourceAnchor ? '#4ade80' : 'rgba(96, 165, 250, 0.9)')
-      const innerColor = '#ffffff'
-      
-      return (
-        <Group key={`anchor-${node.id}-${anchor}`}>
-          {/* Glow effect for source or target */}
-          {(isNearestTarget || isSourceAnchor) && (
-            <KonvaCircle
-              x={pos.x}
-              y={pos.y}
-              radius={24}
-              fill="transparent"
-              stroke={isSourceAnchor ? '#4ade80' : '#22d3ee'}
-              strokeWidth={2}
-              opacity={0.6}
-              dash={[4, 4]}
-              listening={false}
-            />
-          )}
-          {/* Large clickable hit area */}
-          <KonvaCircle
-            x={pos.x}
-            y={pos.y}
-            radius={hitRadius}
-            fill="rgba(96, 165, 250, 0.1)"
-            stroke="transparent"
-            onClick={(e) => {
-              e.cancelBubble = true
-              
-              if (!connectionState.isCreating) {
-                // First click - set source
-                setConnectionState({
-                  isCreating: true,
-                  sourceId: node.id,
-                  sourceAnchor: anchor,
-                  tempTargetPos: { x: pos.x, y: pos.y },
-                })
-              } else {
-                // Second click - complete connection (if not same node)
-                if (connectionState.sourceId !== node.id) {
-                  const isLineTool = currentTool === 'line'
-                  addEdge({
-                    type: isLineTool ? 'line' : 'arrow',
-                    source: connectionState.sourceId!,
-                    target: node.id,
-                    sourceAnchor: connectionState.sourceAnchor!,
-                    targetAnchor: anchor,
-                    arrowStart: 'none',
-                    arrowEnd: isLineTool ? 'none' : 'arrow',
-                  })
-                }
-                // Reset state
-                setConnectionState({
-                  isCreating: false,
-                  sourceId: null,
-                  sourceAnchor: null,
-                  tempTargetPos: null,
-                })
-                setNearestTarget(null)
-              }
-            }}
-            onMouseEnter={(e) => {
-              e.cancelBubble = true
-              const stage = e.target.getStage()
-              if (stage) stage.container().style.cursor = 'crosshair'
-              // Show as potential target when creating
-              if (connectionState.isCreating && connectionState.sourceId !== node.id) {
-                setNearestTarget({ nodeId: node.id, anchor })
-              }
-            }}
-            onMouseLeave={(e) => {
-              e.cancelBubble = true
-              const stage = e.target.getStage()
-              if (stage && !connectionState.isCreating) {
-                stage.container().style.cursor = 'default'
-              }
-              // Clear target highlight
-              if (nearestTarget?.nodeId === node.id && nearestTarget?.anchor === anchor) {
-                setNearestTarget(null)
-              }
-            }}
-          />
-          {/* Visual outer ring */}
-          <KonvaCircle
-            x={pos.x}
-            y={pos.y}
-            radius={visualRadius}
-            fill={outerColor}
-            stroke={isNearestTarget ? '#ffffff' : 'rgba(255,255,255,0.8)'}
-            strokeWidth={isNearestTarget ? 2.5 : 2}
-            shadowColor={isNearestTarget ? '#22d3ee' : '#3b82f6'}
-            shadowBlur={isNearestTarget ? 16 : 6}
-            shadowOpacity={isNearestTarget ? 0.9 : 0.5}
-            listening={false}
-          />
-          {/* Inner dot */}
-          <KonvaCircle
-            x={pos.x}
-            y={pos.y}
-            radius={innerSize}
-            fill={innerColor}
-            listening={false}
-          />
-        </Group>
-      )
-    })
-  }
+  // Anchor point callbacks for AnchorPoints component
+  const handleAnchorClick = useCallback((nodeId: string, anchor: AnchorPosition, pos: { x: number; y: number }) => {
+    if (!connectionState.isCreating) {
+      setConnectionState({
+        isCreating: true,
+        sourceId: nodeId,
+        sourceAnchor: anchor,
+        tempTargetPos: pos,
+      })
+    } else {
+      if (connectionState.sourceId !== nodeId) {
+        const isLineTool = currentTool === 'line'
+        addEdge({
+          type: isLineTool ? 'line' : 'arrow',
+          source: connectionState.sourceId!,
+          target: nodeId,
+          sourceAnchor: connectionState.sourceAnchor!,
+          targetAnchor: anchor,
+          arrowStart: 'none',
+          arrowEnd: isLineTool ? 'none' : 'arrow',
+        })
+      }
+      setConnectionState({
+        isCreating: false,
+        sourceId: null,
+        sourceAnchor: null,
+        tempTargetPos: null,
+      })
+      setNearestTarget(null)
+    }
+  }, [connectionState, currentTool, addEdge])
 
-  const renderGrid = () => {
-    if (!grid?.enabled) return null
-    
-    const gridLines = []
-    const gridSize = grid.size
-    const largeGridSize = gridSize * 5 // Every 5th line is stronger
-    const startX = Math.floor(-pan.x / zoom / gridSize) * gridSize
-    const startY = Math.floor(-pan.y / zoom / gridSize) * gridSize
-    const endX = startX + width / zoom + gridSize * 2
-    const endY = startY + height / zoom + gridSize * 2
-    
-    // Softer grid colors for modern look
-    const minorOpacity = 0.15
-    const majorOpacity = 0.25
-    
-    for (let x = startX; x < endX; x += gridSize) {
-      const isMajor = x % largeGridSize === 0
-      gridLines.push(
-        <Line
-          key={`v-${x}`}
-          points={[x, startY, x, endY]}
-          stroke={grid.color}
-          strokeWidth={isMajor ? 1 : 0.5}
-          opacity={isMajor ? majorOpacity : minorOpacity}
-        />
-      )
+  const handleAnchorHover = useCallback((nodeId: string, anchor: AnchorPosition) => {
+    if (connectionState.isCreating && connectionState.sourceId !== nodeId) {
+      setNearestTarget({ nodeId, anchor })
     }
-    
-    for (let y = startY; y < endY; y += gridSize) {
-      const isMajor = y % largeGridSize === 0
-      gridLines.push(
-        <Line
-          key={`h-${y}`}
-          points={[startX, y, endX, y]}
-          stroke={grid.color}
-          strokeWidth={isMajor ? 1 : 0.5}
-          opacity={isMajor ? majorOpacity : minorOpacity}
-        />
-      )
+  }, [connectionState])
+
+  const handleAnchorLeave = useCallback((nodeId: string, anchor: AnchorPosition) => {
+    if (nearestTarget?.nodeId === nodeId && nearestTarget?.anchor === anchor) {
+      setNearestTarget(null)
     }
-    
-    return gridLines
-  }
+  }, [nearestTarget])
+
+  // renderGrid replaced by <GridLayer /> component
 
   // Check if we should enable stage dragging - only when select/pan tool AND clicking on empty space
   // Stage dragging is now handled manually to avoid conflicts with node dragging
@@ -1756,12 +1180,26 @@ export function Canvas({ width, height }: CanvasProps) {
       }}
     >
       <Layer>
-        {renderGrid()}
+        <GridLayer grid={grid} width={width} height={height} zoom={zoom} pan={pan} />
       </Layer>
       <Layer>
-        {edges.map(renderEdge)}
+        {edges.map(edge => (
+          <EdgeRenderer key={edge.id} edge={edge} nodes={nodes} selectedIds={selectedIds} onSelect={handleEdgeSelect} />
+        ))}
         {nodes.map(renderNode)}
-        {nodes.map(renderAnchorPoints)}
+        {nodes.map(node => (
+          <AnchorPoints
+            key={`anchors-${node.id}`}
+            node={node}
+            currentTool={currentTool}
+            hoveredNodeId={hoveredNodeId}
+            connectionState={connectionState}
+            nearestTarget={nearestTarget}
+            onAnchorClick={handleAnchorClick}
+            onAnchorHover={handleAnchorHover}
+            onAnchorLeave={handleAnchorLeave}
+          />
+        ))}
         {renderTempConnection()}
         {/* Temporary freehand line while drawing */}
         {isDrawingFreehand && freehandPoints.length >= 2 && (
@@ -1774,6 +1212,14 @@ export function Canvas({ width, height }: CanvasProps) {
             tension={0.5}
             opacity={0.8}
           />
+        )}
+        {/* Smart alignment guide lines */}
+        {guides.map((g, i) =>
+          g.orientation === 'V' ? (
+            <Line key={`guide-v-${i}`} points={[g.x, -10000, g.x, 10000]} stroke="#f43f5e" strokeWidth={1} dash={[4, 4]} listening={false} />
+          ) : (
+            <Line key={`guide-h-${i}`} points={[-10000, g.y, 10000, g.y]} stroke="#f43f5e" strokeWidth={1} dash={[4, 4]} listening={false} />
+          )
         )}
         <Transformer
           ref={transformerRef}
@@ -1896,160 +1342,27 @@ export function Canvas({ width, height }: CanvasProps) {
       if (!node) return null
       
       return (
-        <div
-          className="fixed bg-popover border rounded-xl shadow-xl py-2 z-50 min-w-[220px]"
-          style={{ 
-            left: contextMenu.x,
-            top: contextMenu.y,
+        <NodeContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          node={node}
+          onDuplicate={(n) => {
+            addNode({
+              ...n,
+              id: undefined,
+              position: { x: n.position.x + 20, y: n.position.y + 20 },
+            })
           }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* Edit section */}
-          <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase">Редактирование</div>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              // Duplicate node
-              addNode({
-                ...node,
-                id: undefined,
-                position: { x: node.position.x + 20, y: node.position.y + 20 },
-              })
-              setContextMenu(null)
-            }}
-          >
-            <Copy size={16} className="text-muted-foreground" />
-            Дублировать
-            <span className="ml-auto text-xs text-muted-foreground">Ctrl+D</span>
-          </button>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              navigator.clipboard.writeText(JSON.stringify(node))
-              setContextMenu(null)
-            }}
-          >
-            <Clipboard size={16} className="text-muted-foreground" />
-            Копировать
-            <span className="ml-auto text-xs text-muted-foreground">Ctrl+C</span>
-          </button>
-          
-          <div className="h-px bg-border my-1 mx-2" />
-          
-          {/* View section */}
-          <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase">Вид</div>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              updateNode(node.id, { visible: !node.visible })
-              setContextMenu(null)
-            }}
-          >
-            {node.visible ? (
-              <>
-                <EyeOff size={16} className="text-muted-foreground" />
-                Скрыть
-              </>
-            ) : (
-              <>
-                <Eye size={16} className="text-muted-foreground" />
-                Показать
-              </>
-            )}
-          </button>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              updateNode(node.id, { locked: !node.locked })
-              setContextMenu(null)
-            }}
-          >
-            {node.locked ? (
-              <>
-                <Unlock size={16} className="text-muted-foreground" />
-                Разблокировать
-              </>
-            ) : (
-              <>
-                <Lock size={16} className="text-muted-foreground" />
-                Заблокировать
-              </>
-            )}
-          </button>
-          
-          <div className="h-px bg-border my-1 mx-2" />
-          
-          {/* Order section */}
-          <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase">Порядок</div>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              updateNode(node.id, { zIndex: (node.zIndex || 0) + 1 })
-              setContextMenu(null)
-            }}
-          >
-            <ArrowUp size={16} className="text-muted-foreground" />
-            На передний план
-          </button>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              updateNode(node.id, { zIndex: Math.max(0, (node.zIndex || 0) - 1) })
-              setContextMenu(null)
-            }}
-          >
-            <ArrowDown size={16} className="text-muted-foreground" />
-            На задний план
-          </button>
-          
-          <div className="h-px bg-border my-1 mx-2" />
-          
-          {/* Import section */}
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              const event = new CustomEvent('importIntoNode', { detail: { nodeId: contextMenu.nodeId } })
-              window.dispatchEvent(event)
-              setContextMenu(null)
-            }}
-          >
-            <Layers size={16} className="text-muted-foreground" />
-            Импорт в объект
-          </button>
-          
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-accent flex items-center gap-3 transition-colors"
-            onClick={() => {
-              const event = new CustomEvent('openInspector', { detail: { nodeId: contextMenu.nodeId } })
-              window.dispatchEvent(event)
-              setContextMenu(null)
-            }}
-          >
-            <Palette size={16} className="text-muted-foreground" />
-            Настройки стиля
-          </button>
-          
-          <div className="h-px bg-border my-1 mx-2" />
-          
-          {/* Delete section */}
-          <button
-            className="w-full px-4 py-2 text-sm text-left hover:bg-destructive/10 flex items-center gap-3 text-destructive transition-colors"
-            onClick={() => {
-              deleteNode(contextMenu.nodeId)
-              setContextMenu(null)
-            }}
-          >
-            <Trash2 size={16} />
-            Удалить
-            <span className="ml-auto text-xs">Del</span>
-          </button>
-        </div>
+          onCopy={(n) => navigator.clipboard.writeText(JSON.stringify(n))}
+          onToggleVisibility={(id, visible) => updateNode(id, { visible })}
+          onToggleLock={(id, locked) => updateNode(id, { locked })}
+          onBringForward={(id, z) => updateNode(id, { zIndex: z + 1 })}
+          onSendBackward={(id, z) => updateNode(id, { zIndex: Math.max(0, z - 1) })}
+          onImport={(id) => window.dispatchEvent(new CustomEvent('importIntoNode', { detail: { nodeId: id } }))}
+          onOpenInspector={(id) => window.dispatchEvent(new CustomEvent('openInspector', { detail: { nodeId: id } }))}
+          onDelete={(id) => deleteNode(id)}
+          onClose={() => setContextMenu(null)}
+        />
       )
     })()}
     

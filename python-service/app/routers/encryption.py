@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel, Field
 from app.models import (
     EncryptRequest, EncryptResponse,
     DecryptRequest, DecryptResponse
@@ -6,6 +7,16 @@ from app.models import (
 from app.services import encryption_service
 
 router = APIRouter(prefix="/encryption", tags=["Encryption"])
+
+
+class HashPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=8, description="Password to hash")
+
+
+class VerifyPasswordRequest(BaseModel):
+    password: str = Field(..., description="Password to verify")
+    hashed: str = Field(..., description="Hashed password")
+    salt: str = Field(..., description="Salt used for hashing")
 
 
 @router.post("/encrypt", response_model=EncryptResponse)
@@ -47,14 +58,8 @@ async def generate_encryption_key(length: int = 32):
 
 
 @router.post("/hash-password")
-async def hash_password(password: str):
-    if len(password) < 8:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 8 characters"
-        )
-    
-    hashed, salt = encryption_service.hash_password(password)
+async def hash_password(request: HashPasswordRequest):
+    hashed, salt = encryption_service.hash_password(request.password)
     return {
         "success": True,
         "hash": hashed,
@@ -63,8 +68,8 @@ async def hash_password(password: str):
 
 
 @router.post("/verify-password")
-async def verify_password(password: str, hashed: str, salt: str):
-    is_valid = encryption_service.verify_password(password, hashed, salt)
+async def verify_password(request: VerifyPasswordRequest):
+    is_valid = encryption_service.verify_password(request.password, request.hashed, request.salt)
     return {
         "success": True,
         "valid": is_valid

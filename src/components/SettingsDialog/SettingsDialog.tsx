@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Sun, Moon, Monitor, Grid, Save, Keyboard, Type, Palette, RotateCcw, User, Camera } from 'lucide-react'
+import { X, Sun, Moon, Monitor, Grid, Save, Keyboard, Type, Palette, RotateCcw, User, Camera, Globe } from 'lucide-react'
 import { useTheme } from '@/hooks/useTheme'
 import { useAppStore, useAuthStore } from '@/stores'
 import { defaultShortcuts, formatShortcut, type ShortcutAction } from '@/hooks'
@@ -105,7 +105,7 @@ function ShortcutEditor({
 }
 
 export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { theme, setTheme } = useTheme()
   const { user } = useAuthStore()
   const preferences = useAppStore(state => state.preferences)
@@ -274,6 +274,33 @@ export function SettingsDialog({ isOpen, onClose }: SettingsDialogProps) {
                     >
                       <Monitor size={24} />
                       <span className="text-xs">{t('settings.themeSystem')}</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Language Selector */}
+                <div>
+                  <h3 className="text-sm font-medium mb-3">{t('settings.language')}</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => { i18n.changeLanguage('ru'); localStorage.setItem('app-language', 'ru') }}
+                      className={cn(
+                        'flex items-center gap-2 p-3 rounded-lg border transition-colors',
+                        i18n.language === 'ru' ? 'border-primary bg-accent' : 'hover:bg-accent/50'
+                      )}
+                    >
+                      <Globe size={18} />
+                      <span className="text-sm">Русский</span>
+                    </button>
+                    <button
+                      onClick={() => { i18n.changeLanguage('en'); localStorage.setItem('app-language', 'en') }}
+                      className={cn(
+                        'flex items-center gap-2 p-3 rounded-lg border transition-colors',
+                        i18n.language === 'en' ? 'border-primary bg-accent' : 'hover:bg-accent/50'
+                      )}
+                    >
+                      <Globe size={18} />
+                      <span className="text-sm">English</span>
                     </button>
                   </div>
                 </div>

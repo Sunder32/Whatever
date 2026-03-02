@@ -184,8 +184,8 @@ export const useProjectStore = create<ProjectStore>()(
                 )
               }))
             }
-          } catch {
-            // Keep local project
+          } catch (err) {
+            console.error('Failed to sync project to server:', err)
           }
           
           return newProject
@@ -213,8 +213,9 @@ export const useProjectStore = create<ProjectStore>()(
         if (isOwner) {
           try {
             await projectsApi.update(id, data)
-          } catch {
-            // Keep local changes
+          } catch (err) {
+            console.error('Failed to update project on server:', err)
+            set({ error: 'Не удалось обновить проект на сервере' })
           }
         }
       },
@@ -227,9 +228,10 @@ export const useProjectStore = create<ProjectStore>()(
         
         try {
           await projectsApi.delete(id)
-        } catch {
+        } catch (err) {
           // Restore on error
-          set({ projects: previousProjects })
+          console.error('Failed to delete project on server:', err)
+          set({ projects: previousProjects, error: 'Не удалось удалить проект' })
         }
       },
 
@@ -242,8 +244,14 @@ export const useProjectStore = create<ProjectStore>()(
         
         try {
           await projectsApi.archive(id)
-        } catch {
-          // Keep local change
+        } catch (err) {
+          console.error('Failed to archive project:', err)
+          set(state => ({
+            projects: state.projects.map(p => 
+              p.id === id ? { ...p, isArchived: false } : p
+            ),
+            error: 'Не удалось архивировать проект'
+          }))
         }
       },
 
@@ -252,6 +260,36 @@ export const useProjectStore = create<ProjectStore>()(
         if (!original) throw new Error('Project not found')
         
         const user = useAuthStore.getState().user
+        
+        // Try server-side duplicate first
+        try {
+          const response = await projectsApi.duplicate(id)
+          if (response.success && response.data) {
+            const duplicated: Project = {
+              ...response.data,
+              owner: {
+                id: user?.id || 'local',
+                username: user?.username || 'local',
+                fullName: user?.fullName || 'Local User',
+                avatarUrl: user?.avatarUrl,
+              },
+              stars: 0,
+              views: 0,
+              forks: 0,
+              collaborators: [],
+            }
+            
+            set(state => ({
+              projects: [duplicated, ...state.projects]
+            }))
+            
+            return duplicated
+          }
+        } catch (err) {
+          console.error('Server duplicate failed, falling back to local:', err)
+        }
+        
+        // Local fallback
         const duplicated: Project = {
           ...original,
           id: generateId(),
@@ -289,12 +327,14 @@ export const useProjectStore = create<ProjectStore>()(
         
         try {
           await projectsApi.update(id, { isPublic: !project.isPublic })
-        } catch {
+        } catch (err) {
+          console.error('Failed to toggle visibility:', err)
           // Revert on error
           set(state => ({
             projects: state.projects.map(p => 
               p.id === id ? { ...p, isPublic: project.isPublic } : p
-            )
+            ),
+            error: 'Не удалось изменить видимость проекта'
           }))
         }
       },
@@ -315,7 +355,8 @@ export const useProjectStore = create<ProjectStore>()(
         const user = useAuthStore.getState().user
         if (!user) return
         
-        const newCollaborator: ProjectCollaborator = {
+        // Optimistic local update with temporary data
+        const tempCollaborator: ProjectCollaborator = {
           id: generateId(),
           userId: generateId(),
           username: email.split('@')[0],
@@ -328,16 +369,47 @@ export const useProjectStore = create<ProjectStore>()(
           projects: state.projects.map(p => 
             p.id === projectId ? { 
               ...p, 
-              collaborators: [...(p.collaborators || []), newCollaborator],
+              collaborators: [...(p.collaborators || []), tempCollaborator],
               updatedAt: new Date().toISOString()
             } : p
           )
         }))
         
         try {
-          await projectsApi.addCollaborator(projectId, { userId: newCollaborator.userId, role })
-        } catch {
-          // Keep local change
+          // Use collaborationApi which sends { email, permission } matching the Go backend
+          const { collaborationApi } = await import('@/api')
+          const permission = role === 'editor' ? 'write' : 'read'
+          const result = await collaborationApi.addCollaborator(projectId, { email, permission })
+          
+          // Update with real server data
+          if (result) {
+            set(state => ({
+              projects: state.projects.map(p => 
+                p.id === projectId ? { 
+                  ...p, 
+                  collaborators: (p.collaborators || []).map(c => 
+                    c.id === tempCollaborator.id ? { 
+                      ...c, 
+                      id: result.id || c.id, 
+                      userId: result.userId || c.userId,
+                      fullName: result.name || c.fullName,
+                    } : c
+                  )
+                } : p
+              )
+            }))
+          }
+        } catch (error) {
+          // Revert optimistic update on failure
+          console.error('Failed to add collaborator:', error)
+          set(state => ({
+            projects: state.projects.map(p => 
+              p.id === projectId ? { 
+                ...p, 
+                collaborators: (p.collaborators || []).filter(c => c.id !== tempCollaborator.id)
+              } : p
+            )
+          }))
         }
       },
 
@@ -354,8 +426,9 @@ export const useProjectStore = create<ProjectStore>()(
         
         try {
           await projectsApi.removeCollaborator(projectId, userId)
-        } catch {
-          // Keep local change
+        } catch (err) {
+          console.error('Failed to remove collaborator:', err)
+          set({ error: 'Не удалось удалить участника' })
         }
       },
 
@@ -374,13 +447,16 @@ export const useProjectStore = create<ProjectStore>()(
         
         try {
           await projectsApi.updateCollaborator(projectId, userId, { role })
-        } catch {
-          // Keep local change
+        } catch (err) {
+          console.error('Failed to update collaborator role:', err)
+          set({ error: 'Не удалось обновить роль участника' })
         }
       },
 
       fetchInvitations: async () => {
-        // Mock invitations for now
+        // The Go backend uses direct-add collaboration model (no pending invitations).
+        // Collaborators are added instantly via POST /projects/:id/collaborators.
+        // This method is kept for interface compatibility.
         set({ invitations: [] })
       },
 
@@ -427,17 +503,13 @@ export const useProjectStore = create<ProjectStore>()(
         try {
           const { usersApi } = await import('@/api')
           const response = await usersApi.follow(userId)
-          console.log('Follow API response:', response)
           
           if (response.success) {
-            // Only update local state if API succeeded
             set(state => ({
               following: state.following.includes(userId) 
                 ? state.following 
                 : [...state.following, userId]
             }))
-          } else {
-            console.error('Follow failed:', response.error)
           }
         } catch (error) {
           console.error('Follow API error:', error)
@@ -449,15 +521,11 @@ export const useProjectStore = create<ProjectStore>()(
         try {
           const { usersApi } = await import('@/api')
           const response = await usersApi.unfollow(userId)
-          console.log('Unfollow API response:', response)
           
           if (response.success) {
-            // Only update local state if API succeeded
             set(state => ({
               following: state.following.filter(id => id !== userId)
             }))
-          } else {
-            console.error('Unfollow failed:', response.error)
           }
         } catch (error) {
           console.error('Unfollow API error:', error)
@@ -475,19 +543,14 @@ export const useProjectStore = create<ProjectStore>()(
         try {
           const { usersApi } = await import('@/api')
           const response = await usersApi.getFollowing(user.id)
-          console.log('fetchFollowing API response:', response)
           
           if (response.success && response.data?.users) {
             const followingIds = response.data.users.map(u => u.id)
-            console.log('Setting following to:', followingIds)
             set({ following: followingIds })
           } else {
-            // No data from server - reset to empty
-            console.log('No following data from server, resetting to empty')
             set({ following: [] })
           }
         } catch (error) {
-          // On error, reset to empty to not show stale data
           console.error('fetchFollowing error:', error)
           set({ following: [] })
         }

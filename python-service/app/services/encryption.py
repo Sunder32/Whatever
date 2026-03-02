@@ -202,9 +202,11 @@ class EncryptionService:
 
     def verify_password(self, password: str, hashed: str, salt: str) -> bool:
         try:
+            import hmac
             salt_bytes = base64.b64decode(salt)
             key = self._derive_key(password, salt_bytes)
-            return base64.b64encode(key).decode('utf-8') == hashed
+            computed = base64.b64encode(key).decode('utf-8')
+            return hmac.compare_digest(computed, hashed)
         except Exception:
             return False
 

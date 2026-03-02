@@ -11,12 +11,14 @@ import {
   type OnConnect,
   type NodeMouseHandler,
   type ReactFlowInstance,
+  type NodeChange,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 
 import { useGraphStore, type FlowNode, type FlowEdge } from '@/stores/graphStore'
 import { useSelectionStore } from '@/stores/selectionStore'
-import { useAppStore } from '@/stores'
+import { useAppStore, useAuthStore } from '@/stores'
+import { useCollaboration } from '@/hooks'
 import { nodeTypes } from './nodes'
 import { edgeTypes } from './edges'
 import { FloatingToolbar } from './FloatingToolbar'
@@ -25,6 +27,7 @@ import type { NodeType, Tool } from '@/types'
 
 interface FlowEditorProps {
   readOnly?: boolean
+  projectId?: string | null
 }
 
 /**
@@ -40,9 +43,12 @@ interface FlowEditorProps {
  * - Поддержка режима только просмотр (readOnly)
  */
 
-function FlowEditorInner({ readOnly = false }: FlowEditorProps) {
+function FlowEditorInner({ readOnly = false, projectId }: FlowEditorProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const reactFlowInstance = useRef<ReactFlowInstance<FlowNode, FlowEdge> | null>(null)
+  
+  // Auth for collaboration
+  const user = useAuthStore(state => state.user)
   
   // Graph store
   const nodes = useGraphStore(state => state.nodes)
@@ -69,10 +75,68 @@ function FlowEditorInner({ readOnly = false }: FlowEditorProps) {
   const currentTool = useAppStore(state => state.currentTool)
   const setCurrentTool = useAppStore(state => state.setCurrentTool)
   
-  const { screenToFlowPosition, fitView, getNode } = useReactFlow()
+  const { screenToFlowPosition, fitView, getNode, getViewport } = useReactFlow()
   
   // Clipboard state for copy/paste
   const [clipboard, setClipboard] = useState<FlowNode[]>([])
+  
+  // Collaboration state
+  const [remoteCursors, setRemoteCursors] = useState<Map<string, { userId: string; userName: string; color: string; position: { x: number; y: number }; lastUpdate: number }>>(new Map())
+  const [currentViewport, setCurrentViewport] = useState({ x: 0, y: 0, zoom: 1 })
+  const lastCursorSend = useRef(0)
+  
+  // Collaboration handlers
+  const handleCursorUpdate = useCallback((cursors: Map<string, { userId: string; userName: string; color: string; position: { x: number; y: number }; lastUpdate: number }>) => {
+    setRemoteCursors(new Map(cursors))
+  }, [])
+  
+  const handleRemoteElementUpdate = useCallback((elementId: string, changes: Record<string, unknown>) => {
+    if (changes.position) {
+      useGraphStore.getState().updateNodePosition(elementId, changes.position as { x: number; y: number })
+    } else {
+      useGraphStore.getState().updateNode(elementId, changes as Record<string, unknown>)
+    }
+  }, [])
+  
+  // Collaboration hook
+  const {
+    sendCursorPosition,
+    sendElementUpdate,
+  } = useCollaboration({
+    schemaId: projectId || null,
+    userId: user?.id || '',
+    userName: user?.fullName || user?.username || 'Anonymous',
+    enabled: !readOnly && !!user,
+    onCursorUpdate: handleCursorUpdate,
+    onElementUpdate: handleRemoteElementUpdate,
+  })
+  
+  // Throttled cursor position send on mouse move
+  const handleMouseMove = useCallback((event: React.MouseEvent) => {
+    if (readOnly || !user) return
+    const now = Date.now()
+    if (now - lastCursorSend.current < 50) return // 20fps throttle
+    lastCursorSend.current = now
+    
+    const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    sendCursorPosition(flowPos)
+  }, [readOnly, user, screenToFlowPosition, sendCursorPosition])
+  
+  // Wrap onNodesChange to broadcast position changes on drag end
+  const handleNodesChange = useCallback((changes: NodeChange<FlowNode>[]) => {
+    onNodesChange(changes)
+    
+    for (const change of changes) {
+      if (change.type === 'position' && !change.dragging && change.position) {
+        sendElementUpdate(change.id, { position: change.position })
+      }
+    }
+  }, [onNodesChange, sendElementUpdate])
+  
+  // Track viewport for cursor rendering
+  const handleViewportChange = useCallback((_e: unknown, vp: { x: number; y: number; zoom: number }) => {
+    setCurrentViewport(vp)
+  }, [])
   
   // Handle node selection sync
   const handleSelectionChange = useCallback(({ nodes: selectedNodes, edges: selectedEdges }: { 
@@ -268,6 +332,7 @@ function FlowEditorInner({ readOnly = false }: FlowEditorProps) {
   // Handle viewport change
   const handleMoveEnd = useCallback((_event: unknown, viewport: { x: number; y: number; zoom: number }) => {
     setViewport(viewport)
+    setCurrentViewport(viewport)
   }, [setViewport])
   
   // Cursor style based on tool
@@ -297,19 +362,21 @@ function FlowEditorInner({ readOnly = false }: FlowEditorProps) {
       ref={reactFlowWrapper} 
       className="w-full h-full relative"
       onKeyDown={readOnly ? undefined : handleKeyDown}
+      onMouseMove={handleMouseMove}
       tabIndex={readOnly ? -1 : 0}
       style={{ cursor: readOnly ? 'default' : cursorStyle }}
     >
       <ReactFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={readOnly ? undefined : onNodesChange}
+        onNodesChange={readOnly ? undefined : handleNodesChange}
         onEdgesChange={readOnly ? undefined : onEdgesChange}
         onConnect={readOnly ? undefined : onConnect as OnConnect}
         onSelectionChange={readOnly ? undefined : handleSelectionChange}
         onPaneClick={readOnly ? undefined : handlePaneClick}
         onNodeClick={readOnly ? undefined : handleNodeClick}
         onMoveEnd={handleMoveEnd}
+        onMove={handleViewportChange}
         onInit={(instance) => { reactFlowInstance.current = instance }}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
@@ -374,15 +441,46 @@ function FlowEditorInner({ readOnly = false }: FlowEditorProps) {
           </Panel>
         )}
       </ReactFlow>
+      
+      {/* Remote collaboration cursors */}
+      {remoteCursors.size > 0 && (
+        <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden">
+          {Array.from(remoteCursors.values()).map(cursor => {
+            const sx = cursor.position.x * currentViewport.zoom + currentViewport.x
+            const sy = cursor.position.y * currentViewport.zoom + currentViewport.y
+            return (
+              <div
+                key={cursor.userId}
+                className="absolute"
+                style={{
+                  left: sx,
+                  top: sy,
+                  transition: 'left 0.15s ease-out, top 0.15s ease-out',
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" className="drop-shadow-sm">
+                  <path d="M5 2L19 12L12 14L8 22Z" fill={cursor.color || '#3b82f6'} stroke="white" strokeWidth="1.5" />
+                </svg>
+                <span
+                  className="absolute left-4 top-3 px-1.5 py-0.5 rounded text-[10px] font-medium text-white whitespace-nowrap shadow-sm"
+                  style={{ backgroundColor: cursor.color || '#3b82f6' }}
+                >
+                  {cursor.userName}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
 
 // Export with provider wrapper
-export function FlowEditor({ readOnly }: FlowEditorProps) {
+export function FlowEditor({ readOnly, projectId }: FlowEditorProps) {
   return (
     <ReactFlowProvider>
-      <FlowEditorInner readOnly={readOnly} />
+      <FlowEditorInner readOnly={readOnly} projectId={projectId} />
     </ReactFlowProvider>
   )
 }

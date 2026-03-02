@@ -16,13 +16,18 @@ import (
 )
 
 type UserHandler struct {
-	userRepo *repository.UserRepository
+	userRepo    *repository.UserRepository
+	projectRepo *repository.ProjectRepository
 }
 
-func NewUserHandler(userRepo *repository.UserRepository) *UserHandler {
-	return &UserHandler{
+func NewUserHandler(userRepo *repository.UserRepository, projectRepo ...*repository.ProjectRepository) *UserHandler {
+	h := &UserHandler{
 		userRepo: userRepo,
 	}
+	if len(projectRepo) > 0 {
+		h.projectRepo = projectRepo[0]
+	}
+	return h
 }
 
 type UserResponse struct {
@@ -104,6 +109,32 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 		if err == nil {
 			defer file.Close()
 
+			// Validate file size (max 5MB for avatars)
+			if header.Size > 5<<20 {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Avatar file too large (max 5MB)"})
+				return
+			}
+
+			// Validate MIME content type by reading file header
+			headerBytes := make([]byte, 512)
+			n, _ := file.Read(headerBytes)
+			detectedType := http.DetectContentType(headerBytes[:n])
+			// Seek back to start after sniffing
+			if seeker, ok := file.(io.ReadSeeker); ok {
+				seeker.Seek(0, io.SeekStart)
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": "Failed to process file"})
+				return
+			}
+
+			allowedMimes := map[string]bool{
+				"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true,
+			}
+			if !allowedMimes[detectedType] {
+				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed"})
+				return
+			}
+
 			// Create uploads directory if not exists
 			uploadDir := "./uploads/avatars"
 			if err := os.MkdirAll(uploadDir, 0755); err != nil {
@@ -111,17 +142,13 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 				return
 			}
 
-			// Validate file type
-			allowedTypes := map[string]bool{
-				".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+			// Determine extension from detected MIME type
+			mimeToExt := map[string]string{
+				"image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp",
 			}
-			ext := filepath.Ext(header.Filename)
+			ext := mimeToExt[detectedType]
 			if ext == "" {
-				ext = ".jpg"
-			}
-			if !allowedTypes[ext] {
-				c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "Invalid file type"})
-				return
+				ext = filepath.Ext(header.Filename)
 			}
 
 			// Generate unique filename
@@ -273,6 +300,65 @@ func (h *UserHandler) GetSuggested(c *gin.Context) {
 	})
 }
 
+// GetByUsername godoc
+// @Summary Get user by username
+// @Description Get a user by their username
+// @Tags users
+// @Produce json
+// @Param username path string true "Username"
+// @Success 200 {object} map[string]interface{}
+// @Router /users/username/{username} [get]
+func (h *UserHandler) GetByUsername(c *gin.Context) {
+	username := c.Param("username")
+	if username == "" {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Username is required",
+		})
+		return
+	}
+
+	user, err := h.userRepo.GetByUsername(c.Request.Context(), username)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"success": false,
+			"error":   "User not found",
+		})
+		return
+	}
+
+	followersCount, _ := h.userRepo.GetFollowersCount(c.Request.Context(), user.ID)
+	followingCount, _ := h.userRepo.GetFollowingCount(c.Request.Context(), user.ID)
+
+	isFollowing := false
+	if currentUserID, exists := c.Get("userID"); exists {
+		isFollowing, _ = h.userRepo.IsFollowing(c.Request.Context(), currentUserID.(uuid.UUID), user.ID)
+	}
+
+	projectsCount := 0
+	if h.projectRepo != nil {
+		if cnt, err := h.projectRepo.Count(c.Request.Context(), user.ID); err == nil {
+			projectsCount = cnt
+		}
+	}
+
+	response := UserProfileResponse{
+		ID:             user.ID.String(),
+		Username:       user.Name,
+		FullName:       user.Name,
+		AvatarURL:      user.Avatar,
+		ProjectsCount:  projectsCount,
+		FollowersCount: followersCount,
+		FollowingCount: followingCount,
+		IsFollowing:    isFollowing,
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"data":    response,
+	})
+}
+
 // GetByID godoc
 // @Summary Get user by ID
 // @Description Get a user by their ID
@@ -320,12 +406,20 @@ func (h *UserHandler) GetByID(c *gin.Context) {
 		isFollowing, _ = h.userRepo.IsFollowing(c.Request.Context(), currentUserID.(uuid.UUID), userID)
 	}
 
+	// Get project count
+	projectsCount := 0
+	if h.projectRepo != nil {
+		if cnt, err := h.projectRepo.Count(c.Request.Context(), userID); err == nil {
+			projectsCount = cnt
+		}
+	}
+
 	response := UserProfileResponse{
 		ID:             user.ID.String(),
 		Username:       user.Name,
 		FullName:       user.Name,
 		AvatarURL:      user.Avatar,
-		ProjectsCount:  0, // TODO: Add project count
+		ProjectsCount:  projectsCount,
 		FollowersCount: followersCount,
 		FollowingCount: followingCount,
 		IsFollowing:    isFollowing,
@@ -444,12 +538,53 @@ func (h *UserHandler) Unfollow(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /users/{id}/projects [get]
 func (h *UserHandler) GetUserProjects(c *gin.Context) {
-	// Return empty projects for now
+	userIDStr := c.Param("id")
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "Invalid user ID",
+		})
+		return
+	}
+
+	if h.projectRepo == nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data": gin.H{
+				"projects": []interface{}{},
+				"total":    0,
+			},
+		})
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 20
+	}
+	offset := (page - 1) * limit
+
+	projects, err := h.projectRepo.ListByOwner(c.Request.Context(), userID, limit, offset)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "Failed to get projects",
+		})
+		return
+	}
+
+	total, _ := h.projectRepo.Count(c.Request.Context(), userID)
+
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"projects": []interface{}{},
-			"total":    0,
+			"projects": projects,
+			"total":    total,
 		},
 	})
 }
