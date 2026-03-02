@@ -446,7 +446,12 @@ export const useProjectStore = create<ProjectStore>()(
         }))
         
         try {
-          await projectsApi.updateCollaborator(projectId, userId, { permission: role })
+          const permissionMap: Record<string, 'read' | 'write' | 'admin'> = {
+            viewer: 'read',
+            editor: 'write',
+            admin: 'admin',
+          }
+          await projectsApi.updateCollaborator(projectId, userId, { permission: permissionMap[role] || 'read' })
         } catch (err) {
           console.error('Failed to update collaborator role:', err)
           set({ error: 'Не удалось обновить роль участника' })
