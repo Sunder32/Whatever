@@ -26,6 +26,7 @@ type Permission = 'owner' | 'admin' | 'write' | 'read'
 
 interface Collaborator {
   id: string
+  userId: string
   email: string
   name: string
   avatarUrl?: string
@@ -70,6 +71,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
       // Convert API response to local format
       const collabs: Collaborator[] = apiCollabs.map(c => ({
         id: c.id,
+        userId: c.userId || c.id,
         email: c.email,
         name: c.name,
         avatarUrl: c.avatar,
@@ -82,6 +84,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
       if (user && !collabs.find(c => c.permission === 'owner')) {
         collabs.unshift({
           id: 'owner',
+          userId: user.id,
           email: user.email,
           name: user.fullName || 'Вы',
           permission: 'owner',
@@ -97,6 +100,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
       if (user) {
         setCollaborators([{
           id: 'owner',
+          userId: user.id,
           email: user.email,
           name: user.fullName || 'Вы',
           permission: 'owner',
@@ -129,6 +133,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
       
       setCollaborators([...collaborators, {
         id: newCollab.id,
+        userId: newCollab.userId || newCollab.id,
         email: newCollab.email,
         name: newCollab.name,
         avatarUrl: newCollab.avatar,
@@ -343,7 +348,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
                       <>
                         <select
                           value={collab.permission}
-                          onChange={(e) => handleChangePermission(collab.id, collab.id, e.target.value as 'read' | 'write' | 'admin')}
+                          onChange={(e) => handleChangePermission(collab.id, collab.userId, e.target.value as 'read' | 'write' | 'admin')}
                           className="px-2 py-1 rounded bg-secondary border text-xs"
                         >
                           <option value="read">Просмотр</option>
@@ -351,7 +356,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
                           <option value="admin">Админ</option>
                         </select>
                         <button
-                          onClick={() => handleRemoveCollaborator(collab.id, collab.id)}
+                          onClick={() => handleRemoveCollaborator(collab.id, collab.userId)}
                           className="p-1 rounded hover:bg-destructive/20 text-destructive"
                         >
                           <Trash2 size={14} />

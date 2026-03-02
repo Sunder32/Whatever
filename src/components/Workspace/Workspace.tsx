@@ -50,6 +50,19 @@ export function Workspace({ initialView = 'dashboard' }: WorkspaceProps) {
   // Store current project for editor
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   
+  // Handle /shared/:projectId URL on mount
+  useEffect(() => {
+    const path = window.location.pathname
+    const match = path.match(/^\/shared\/(.+)$/)
+    if (match) {
+      const sharedProjectId = match[1]
+      setEditingProjectId(sharedProjectId)
+      setCurrentView('editor')
+      // Clean URL to avoid re-triggering
+      window.history.replaceState(null, '', '/')
+    }
+  }, [])
+  
   // Load initial data
   useEffect(() => {
     if (isAuthenticated) {

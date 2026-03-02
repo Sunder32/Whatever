@@ -28,8 +28,8 @@ import {
 } from '@/components'
 import { FlowEditor } from '@/components/FlowEditor'
 import { useDiagramStore, useAppStore, useProjectStore, useGraphStore, useAuthStore } from '@/stores'
-import { useTheme, useOnlineStatus, useKeyboardShortcuts, useAutoSave } from '@/hooks'
-import { storageService, webSocketService } from '@/services'
+import { useTheme, useOnlineStatus, useKeyboardShortcuts, useAutoSave, useCollaboration } from '@/hooks'
+import { storageService } from '@/services'
 import { cn } from '@/utils'
 import { type TemplateType, getTemplateById } from '@/utils/diagramTemplates'
 import { syncFlowToWtvFile } from '@/utils/diagramAdapter'
@@ -63,10 +63,72 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [storageMode, setStorageMode] = useState<'local' | 'cloud' | 'syncing'>('local')
+  const [isEditingName, setIsEditingName] = useState(false)
+  const [editNameValue, setEditNameValue] = useState('')
   
   // Online collaboration users
   const [onlineUsers, setOnlineUsers] = useState<string[]>([])
   const currentUser = useAuthStore(state => state.user)
+  
+  // Realtime collaboration via WebSocket
+  const handleElementUpdate = useCallback((elementId: string, changes: Record<string, unknown>) => {
+    const { nodes } = useGraphStore.getState()
+    const existingNode = nodes.find(n => n.id === elementId)
+    if (existingNode) {
+      // Apply position changes
+      if (changes.position) {
+        useGraphStore.getState().updateNodePosition(elementId, changes.position as { x: number; y: number })
+      }
+      // Apply data changes
+      const dataChanges = { ...changes }
+      delete dataChanges.position
+      if (Object.keys(dataChanges).length > 0) {
+        useGraphStore.getState().updateNode(elementId, dataChanges as any)
+      }
+    }
+  }, [])
+  
+  const { sendElementUpdate } = useCollaboration({
+    schemaId: projectId || null,
+    userId: currentUser?.id || '',
+    userName: currentUser?.fullName || currentUser?.username || 'Anonymous',
+    enabled: !!projectId && !!currentUser,
+    onElementUpdate: handleElementUpdate,
+    onUserJoin: useCallback((userId: string) => {
+      setOnlineUsers(prev => prev.includes(userId) ? prev : [...prev, userId])
+    }, []),
+    onUserLeave: useCallback((userId: string) => {
+      setOnlineUsers(prev => prev.filter(id => id !== userId))
+    }, []),
+  })
+  
+  // Subscribe to graph changes and broadcast via WebSocket
+  useEffect(() => {
+    if (!projectId || !currentUser) return
+    
+    const unsub = useGraphStore.subscribe((state, prevState) => {
+      // Detect node changes and broadcast
+      if (state.nodes !== prevState.nodes && state.isDirty) {
+        for (const node of state.nodes) {
+          const prevNode = prevState.nodes.find(n => n.id === node.id)
+          if (!prevNode) continue
+          
+          const changes: Record<string, unknown> = {}
+          if (node.position.x !== prevNode.position.x || node.position.y !== prevNode.position.y) {
+            changes.position = node.position
+          }
+          if (node.data !== prevNode.data) {
+            Object.assign(changes, node.data)
+          }
+          if (Object.keys(changes).length > 0) {
+            sendElementUpdate(node.id, changes)
+          }
+        }
+      }
+    })
+    
+    return () => unsub()
+  }, [projectId, currentUser, sendElementUpdate])
   
   // Stores
   const file = useDiagramStore(state => state.file)
@@ -76,6 +138,7 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
   const setHasUnsavedChanges = useAppStore(state => state.setHasUnsavedChanges)
   const getProjectById = useProjectStore(state => state.getProjectById)
   const canEditProject = useProjectStore(state => state.canEditProject)
+  const updateProject = useProjectStore(state => state.updateProject)
   
   // Проверка прав на редактирование
   const canEdit = useMemo(() => {
@@ -246,26 +309,6 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
     return () => unsubscribe()
   }, [])
   
-  // Listen for online collaboration users
-  useEffect(() => {
-    if (!projectId || !currentUser) return
-    
-    const unsubJoin = webSocketService.on('user_joined', (data: unknown) => {
-      const { userId } = data as { userId: string }
-      setOnlineUsers(prev => prev.includes(userId) ? prev : [...prev, userId])
-    })
-    
-    const unsubLeave = webSocketService.on('user_left', (data: unknown) => {
-      const { userId } = data as { userId: string }
-      setOnlineUsers(prev => prev.filter(id => id !== userId))
-    })
-    
-    return () => {
-      unsubJoin()
-      unsubLeave()
-    }
-  }, [projectId, currentUser])
-  
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Read-only banner */}
@@ -292,9 +335,38 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
           <div className="w-px h-5 bg-border/50" />
           
           <div className="flex items-center gap-2">
-            <span className="font-medium text-sm max-w-[200px] truncate">
-              {projectName}
-            </span>
+            {isEditingName ? (
+              <input
+                autoFocus
+                value={editNameValue}
+                onChange={(e) => setEditNameValue(e.target.value)}
+                onBlur={() => {
+                  const trimmed = editNameValue.trim()
+                  if (trimmed && trimmed !== projectName && projectId) {
+                    updateProject(projectId, { name: trimmed })
+                  }
+                  setIsEditingName(false)
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                  if (e.key === 'Escape') setIsEditingName(false)
+                }}
+                className="font-medium text-sm max-w-[200px] px-1 py-0.5 rounded bg-secondary border border-primary/50 outline-none"
+              />
+            ) : (
+              <span
+                className="font-medium text-sm max-w-[200px] truncate cursor-pointer hover:bg-secondary/50 px-1 py-0.5 rounded transition-colors"
+                onDoubleClick={() => {
+                  if (canEdit && projectId) {
+                    setEditNameValue(projectName)
+                    setIsEditingName(true)
+                  }
+                }}
+                title={canEdit ? 'Двойной клик для переименования' : projectName}
+              >
+                {projectName}
+              </span>
+            )}
             {isDirty && canEdit && (
               <span className="w-2 h-2 rounded-full bg-yellow-500" title="Есть несохранённые изменения" />
             )}
