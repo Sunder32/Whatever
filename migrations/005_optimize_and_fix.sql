@@ -7,8 +7,16 @@
 -- ============================================================
 
 -- Go code uses 'commit_message' but migration 001 created 'comment'
--- Rename to match the Go repository code
-ALTER TABLE schema_versions RENAME COLUMN comment TO commit_message;
+-- Rename to match the Go repository code (idempotent: skip if already renamed)
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'schema_versions' AND column_name = 'comment'
+    ) THEN
+        ALTER TABLE schema_versions RENAME COLUMN comment TO commit_message;
+    END IF;
+END $$;
 
 -- Add missing columns that Go code (CreateVersion, GetVersion) expects
 ALTER TABLE schema_versions ADD COLUMN IF NOT EXISTS diff JSONB DEFAULT '{}';
