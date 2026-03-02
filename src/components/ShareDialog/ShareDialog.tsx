@@ -1,21 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { 
   X, 
   Globe, 
   Lock, 
-  Users, 
   UserPlus, 
-  Copy, 
+  Link2, 
   Check,
   Trash2,
   Crown,
-  Edit,
+  Pencil,
   Eye,
-  Loader2
+  Loader2,
+  ChevronDown,
+  Shield,
+  Mail
 } from 'lucide-react'
 import { useDiagramStore, useAuthStore } from '@/stores'
 import { collaborationApi } from '@/api'
 import { cn } from '@/utils'
+import { UserAvatar } from '@/components/ui/UserAvatar'
 
 interface ShareDialogProps {
   isOpen: boolean
@@ -35,6 +38,79 @@ interface Collaborator {
   addedAt: string
 }
 
+/* ─── Custom dropdown for role selection ─── */
+function RoleDropdown({
+  value,
+  onChange,
+  disabled,
+  compact,
+}: {
+  value: Permission
+  onChange: (v: 'read' | 'write' | 'admin') => void
+  disabled?: boolean
+  compact?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const roles: { value: 'read' | 'write' | 'admin'; label: string; icon: React.ReactNode; desc: string }[] = [
+    { value: 'read', label: 'Просмотр', icon: <Eye size={14} />, desc: 'Может только просматривать' },
+    { value: 'write', label: 'Редактор', icon: <Pencil size={14} />, desc: 'Может редактировать схему' },
+    { value: 'admin', label: 'Админ', icon: <Shield size={14} />, desc: 'Полный доступ к настройкам' },
+  ]
+
+  const current = roles.find(r => r.value === value) || roles[0]
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => !disabled && setOpen(!open)}
+        disabled={disabled}
+        className={cn(
+          'flex items-center gap-1.5 rounded-md border border-border/60 bg-secondary/40 transition-colors',
+          'hover:bg-secondary/80 focus-visible:ring-2 focus-visible:ring-primary outline-none',
+          compact ? 'px-2 py-1 text-xs' : 'px-3 py-1.5 text-sm',
+          disabled && 'opacity-50 cursor-not-allowed'
+        )}
+      >
+        {current.icon}
+        <span>{current.label}</span>
+        <ChevronDown size={12} className={cn('transition-transform', open && 'rotate-180')} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 w-56 rounded-lg border bg-popover shadow-lg py-1 animate-in fade-in-0 zoom-in-95">
+          {roles.map(role => (
+            <button
+              key={role.value}
+              onClick={() => { onChange(role.value); setOpen(false) }}
+              className={cn(
+                'w-full flex items-start gap-3 px-3 py-2.5 text-left hover:bg-accent/60 transition-colors',
+                role.value === value && 'bg-accent/40'
+              )}
+            >
+              <span className="mt-0.5 text-muted-foreground">{role.icon}</span>
+              <div>
+                <p className="text-sm font-medium">{role.label}</p>
+                <p className="text-xs text-muted-foreground">{role.desc}</p>
+              </div>
+              {role.value === value && <Check size={14} className="ml-auto mt-0.5 text-primary" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
   const file = useDiagramStore(state => state.file)
   const { user } = useAuthStore()
@@ -51,15 +127,12 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
   
   useEffect(() => {
     if (isOpen && file && file.projectId) {
-      // Generate share link
       setShareLink(collaborationApi.generateShareLink(file.projectId))
-      
-      // Load collaborators
       loadCollaborators()
     }
   }, [isOpen, file])
   
-  const loadCollaborators = async () => {
+  const loadCollaborators = useCallback(async () => {
     if (!file || !file.projectId) return
     
     setIsLoading(true)
@@ -68,7 +141,6 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
     try {
       const apiCollabs = await collaborationApi.getCollaborators(file.projectId)
       
-      // Convert API response to local format
       const collabs: Collaborator[] = apiCollabs.map(c => ({
         id: c.id,
         userId: c.userId || c.id,
@@ -80,7 +152,6 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
         addedAt: c.createdAt || new Date().toISOString(),
       }))
       
-      // Add owner if not in list
       if (user && !collabs.find(c => c.permission === 'owner')) {
         collabs.unshift({
           id: 'owner',
@@ -96,7 +167,6 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
       setCollaborators(collabs)
     } catch (err) {
       console.error('Failed to load collaborators:', err)
-      // If API fails, show owner at least
       if (user) {
         setCollaborators([{
           id: 'owner',
@@ -111,7 +181,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [file, user])
   
   const handleCopyLink = () => {
     navigator.clipboard.writeText(shareLink)
@@ -131,7 +201,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
         permission: invitePermission,
       })
       
-      setCollaborators([...collaborators, {
+      setCollaborators(prev => [...prev, {
         id: newCollab.id,
         userId: newCollab.userId || newCollab.id,
         email: newCollab.email,
@@ -154,7 +224,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
     
     try {
       await collaborationApi.removeCollaborator(file.projectId, userId)
-      setCollaborators(collaborators.filter(c => c.id !== id))
+      setCollaborators(prev => prev.filter(c => c.id !== id))
     } catch (err) {
       console.error('Failed to remove collaborator:', err)
     }
@@ -165,7 +235,7 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
     
     try {
       await collaborationApi.updateCollaborator(file.projectId, userId, permission)
-      setCollaborators(collaborators.map(c => 
+      setCollaborators(prev => prev.map(c => 
         c.id === id ? { ...c, permission } : c
       ))
     } catch (err) {
@@ -183,56 +253,56 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
       console.error('Failed to update visibility:', err)
     }
   }
-  
-  const getPermissionIcon = (permission: Permission) => {
-    switch (permission) {
-      case 'owner': return <Crown size={14} className="text-yellow-500" />
-      case 'admin': return <Crown size={14} className="text-purple-500" />
-      case 'write': return <Edit size={14} className="text-blue-500" />
-      case 'read': return <Eye size={14} className="text-gray-500" />
-    }
-  }
-  
-  const getPermissionLabel = (permission: Permission) => {
-    switch (permission) {
-      case 'owner': return 'Владелец'
-      case 'admin': return 'Админ'
-      case 'write': return 'Редактор'
-      case 'read': return 'Просмотр'
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && inviteEmail.trim()) {
+      handleInvite()
     }
   }
   
   if (!isOpen) return null
   
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+    <div className="fixed inset-0 z-50 flex items-center justify-center animate-in fade-in-0 duration-150">
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       
-      <div className="relative w-full max-w-lg bg-popover border rounded-lg shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Users size={20} />
-            Настройки доступа
-          </h2>
-          <button onClick={onClose} className="p-1 rounded hover:bg-accent">
-            <X size={20} />
+      <div className="relative w-full max-w-md bg-popover border border-border/60 rounded-xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+        {/* ─── Header ─── */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border/40">
+          <h2 className="text-base font-semibold">Настройки доступа</h2>
+          <button 
+            onClick={onClose} 
+            className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+          >
+            <X size={18} />
           </button>
         </div>
         
-        <div className="p-4 space-y-6">
-          {/* Visibility toggle */}
-          <div className="flex items-center justify-between p-4 rounded-lg bg-secondary/50 border">
+        {/* ─── Body ─── */}
+        <div className="px-5 py-4 space-y-5 max-h-[70vh] overflow-y-auto">
+
+          {/* ── Visibility toggle ── */}
+          <div 
+            className={cn(
+              'flex items-center justify-between p-3.5 rounded-lg border transition-colors cursor-pointer',
+              isPublic 
+                ? 'bg-emerald-500/5 border-emerald-500/20' 
+                : 'bg-secondary/30 border-border/40'
+            )}
+            onClick={handleTogglePublic}
+          >
             <div className="flex items-center gap-3">
-              {isPublic ? (
-                <Globe size={24} className="text-green-500" />
-              ) : (
-                <Lock size={24} className="text-orange-500" />
-              )}
+              <div className={cn(
+                'flex items-center justify-center w-9 h-9 rounded-lg',
+                isPublic ? 'bg-emerald-500/15 text-emerald-500' : 'bg-orange-500/15 text-orange-500'
+              )}>
+                {isPublic ? <Globe size={18} /> : <Lock size={18} />}
+              </div>
               <div>
-                <p className="font-medium">
+                <p className="text-sm font-medium leading-tight">
                   {isPublic ? 'Публичная схема' : 'Приватная схема'}
                 </p>
-                <p className="text-sm text-muted-foreground">
+                <p className="text-xs text-muted-foreground mt-0.5">
                   {isPublic 
                     ? 'Любой с ссылкой может просматривать' 
                     : 'Только приглашённые пользователи'
@@ -240,140 +310,174 @@ export function ShareDialog({ isOpen, onClose }: ShareDialogProps) {
                 </p>
               </div>
             </div>
-            <button
-              onClick={handleTogglePublic}
+            {/* Toggle switch */}
+            <div
+              role="switch"
+              aria-checked={isPublic}
               className={cn(
-                'relative w-12 h-6 rounded-full transition-colors',
-                isPublic ? 'bg-green-500' : 'bg-gray-600'
+                'relative w-11 h-6 rounded-full transition-colors duration-200 flex-shrink-0',
+                isPublic ? 'bg-emerald-500' : 'bg-muted-foreground/30'
               )}
             >
               <span className={cn(
-                'absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform',
-                isPublic ? 'translate-x-6' : 'translate-x-0.5'
+                'absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm',
+                'transition-transform duration-200 ease-in-out',
+                isPublic && 'translate-x-5'
               )} />
-            </button>
+            </div>
           </div>
           
-          {/* Share link */}
+          {/* ── Share link ── */}
           <div>
-            <label className="block text-sm font-medium mb-2">Ссылка для доступа</label>
+            <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Ссылка для доступа
+            </label>
             <div className="flex gap-2">
-              <input
-                type="text"
-                value={shareLink}
-                readOnly
-                className="flex-1 px-3 py-2 rounded-lg bg-secondary border text-sm"
-              />
+              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/40 border border-border/40">
+                <Link2 size={14} className="text-muted-foreground flex-shrink-0" />
+                <input
+                  type="text"
+                  value={shareLink}
+                  readOnly
+                  className="flex-1 bg-transparent text-sm text-foreground/80 outline-none truncate select-all"
+                />
+              </div>
               <button
                 onClick={handleCopyLink}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 flex items-center gap-2"
+                className={cn(
+                  'px-3.5 py-2 rounded-lg text-sm font-medium flex items-center gap-1.5 transition-all duration-200 flex-shrink-0',
+                  copied 
+                    ? 'bg-emerald-500/15 text-emerald-500 border border-emerald-500/30' 
+                    : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                )}
               >
-                {copied ? <Check size={16} /> : <Copy size={16} />}
-                {copied ? 'Скопировано' : 'Копировать'}
+                {copied ? <Check size={14} /> : <Link2 size={14} />}
+                {copied ? 'Скопировано!' : 'Копировать'}
               </button>
             </div>
           </div>
           
-          {/* Invite collaborators */}
+          {/* ── Invite ── */}
           <div>
-            <label className="block text-sm font-medium mb-2">Пригласить пользователей</label>
+            <label className="block text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">
+              Пригласить
+            </label>
             <div className="flex gap-2">
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => setInviteEmail(e.target.value)}
-                placeholder="email@example.com"
-                className="flex-1 px-3 py-2 rounded-lg bg-secondary border text-sm focus:ring-2 focus:ring-primary outline-none"
+              <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/40 border border-border/40 focus-within:ring-2 focus-within:ring-primary/50 focus-within:border-primary/50 transition-all">
+                <Mail size={14} className="text-muted-foreground flex-shrink-0" />
+                <input
+                  type="email"
+                  value={inviteEmail}
+                  onChange={(e) => setInviteEmail(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="email@example.com"
+                  className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/50"
+                />
+              </div>
+              <RoleDropdown 
+                value={invitePermission} 
+                onChange={setInvitePermission} 
               />
-              <select
-                value={invitePermission}
-                onChange={(e) => setInvitePermission(e.target.value as 'read' | 'write' | 'admin')}
-                className="px-3 py-2 rounded-lg bg-secondary border text-sm"
-              >
-                <option value="read">Просмотр</option>
-                <option value="write">Редактор</option>
-                <option value="admin">Админ</option>
-              </select>
               <button
                 onClick={handleInvite}
                 disabled={!inviteEmail.trim() || isInviting}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+                className={cn(
+                  'p-2 rounded-lg bg-primary text-primary-foreground transition-all flex-shrink-0',
+                  'hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed'
+                )}
               >
                 {isInviting ? <Loader2 size={16} className="animate-spin" /> : <UserPlus size={16} />}
               </button>
             </div>
             {error && (
-              <p className="text-sm text-destructive mt-2">{error}</p>
+              <p className="flex items-center gap-1.5 text-xs text-destructive mt-2">
+                <span className="w-1 h-1 rounded-full bg-destructive flex-shrink-0" />
+                {error}
+              </p>
             )}
           </div>
           
-          {/* Collaborators list */}
+          {/* ── Collaborators ── */}
           <div>
-            <label className="block text-sm font-medium mb-2">
-              Участники ({collaborators.length})
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Участники
+              </label>
+              <span className="text-xs text-muted-foreground/60 tabular-nums">
+                {collaborators.length}
+              </span>
+            </div>
+
             {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 size={24} className="animate-spin text-muted-foreground" />
+              <div className="flex items-center justify-center py-10">
+                <Loader2 size={20} className="animate-spin text-muted-foreground" />
               </div>
             ) : (
-            <div className="space-y-2 max-h-48 overflow-auto">
-              {collaborators.map(collab => (
-                <div 
-                  key={collab.id}
-                  className="flex items-center justify-between p-3 rounded-lg bg-secondary/50"
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center text-sm font-medium">
-                      {collab.name[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="text-sm font-medium flex items-center gap-2">
-                        {collab.name}
-                        {collab.status === 'pending' && (
-                          <span className="text-xs text-yellow-500">(ожидает)</span>
-                        )}
-                      </p>
-                      <p className="text-xs text-muted-foreground">{collab.email}</p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2">
-                    {collab.permission === 'owner' ? (
-                      <span className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-yellow-500/20 text-yellow-500">
-                        {getPermissionIcon(collab.permission)}
-                        {getPermissionLabel(collab.permission)}
-                      </span>
-                    ) : (
-                      <>
-                        <select
-                          value={collab.permission}
-                          onChange={(e) => handleChangePermission(collab.id, collab.userId, e.target.value as 'read' | 'write' | 'admin')}
-                          className="px-2 py-1 rounded bg-secondary border text-xs"
-                        >
-                          <option value="read">Просмотр</option>
-                          <option value="write">Редактор</option>
-                          <option value="admin">Админ</option>
-                        </select>
-                        <button
-                          onClick={() => handleRemoveCollaborator(collab.id, collab.userId)}
-                          className="p-1 rounded hover:bg-destructive/20 text-destructive"
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </>
+              <div className="space-y-0.5 max-h-52 overflow-y-auto rounded-lg border border-border/40">
+                {collaborators.map((collab, idx) => (
+                  <div 
+                    key={collab.id}
+                    className={cn(
+                      'flex items-center justify-between px-3 py-2.5 transition-colors hover:bg-accent/30',
+                      idx !== collaborators.length - 1 && 'border-b border-border/20'
                     )}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <UserAvatar 
+                        src={collab.avatarUrl} 
+                        name={collab.name} 
+                        size="sm" 
+                      />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium leading-tight truncate flex items-center gap-1.5">
+                          {collab.name}
+                          {collab.userId === user?.id && (
+                            <span className="text-[10px] text-muted-foreground font-normal">(вы)</span>
+                          )}
+                          {collab.status === 'pending' && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/15 text-amber-500">
+                              ожидает
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-muted-foreground truncate">{collab.email}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+                      {collab.permission === 'owner' ? (
+                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                          <Crown size={12} />
+                          Владелец
+                        </span>
+                      ) : (
+                        <>
+                          <RoleDropdown
+                            value={collab.permission}
+                            onChange={(p) => handleChangePermission(collab.id, collab.userId, p)}
+                            compact
+                          />
+                          <button
+                            onClick={() => handleRemoveCollaborator(collab.id, collab.userId)}
+                            className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                            title="Удалить участника"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
         
-        <div className="p-4 border-t bg-secondary/30">
-          <p className="text-xs text-muted-foreground text-center">
-            Приглашённые пользователи получат email с ссылкой для доступа к схеме
+        {/* ─── Footer ─── */}
+        <div className="px-5 py-3 border-t border-border/40 bg-secondary/20">
+          <p className="text-[11px] text-muted-foreground/60 text-center">
+            Приглашённые пользователи получат уведомление со ссылкой для доступа
           </p>
         </div>
       </div>

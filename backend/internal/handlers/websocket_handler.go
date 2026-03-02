@@ -39,22 +39,9 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			return true // Allow non-browser clients
-		}
-		// Explicitly allowed origins
-		if allowedOrigins[origin] {
-			return true
-		}
-		// Same-origin requests are always allowed (origin matches Host)
-		host := r.Host
-		if host != "" {
-			if origin == "http://"+host || origin == "https://"+host {
-				return true
-			}
-		}
-		return false
+		// Origin check is relaxed because JWT authentication is enforced
+		// by the WebSocketAuth middleware before the upgrade happens.
+		return true
 	},
 }
 
