@@ -112,8 +112,8 @@ services:
       GO_BACKEND_URL: "http://backend:9000"
       JWT_SECRET: "${JWT_SECRET}"
       ENCRYPTION_KEY: "${ENCRYPTION_KEY}"
-      MAX_EXPORT_SIZE: "16777216"
-      DEFAULT_DPI: "150"
+      MAX_FILE_SIZE: "16777216"
+      EXPORT_DEFAULT_DPI: "150"
       CORS_ORIGINS: "${CORS_ORIGINS}"
       LOG_LEVEL: "WARNING"
     depends_on:

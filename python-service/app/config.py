@@ -45,12 +45,39 @@ class Settings(BaseSettings):
     encryption_iterations: int = 100000
     
     max_file_size: int = 50 * 1024 * 1024
-    allowed_image_types: list[str] = ["image/png", "image/jpeg", "image/svg+xml", "image/webp"]
+    allowed_image_types_raw: str = Field(
+        default="image/png,image/jpeg,image/svg+xml,image/webp",
+        alias="ALLOWED_IMAGE_TYPES"
+    )
+
+    @computed_field
+    @property
+    def allowed_image_types(self) -> list[str]:
+        raw = self.allowed_image_types_raw
+        if not raw or not raw.strip():
+            return ["image/png", "image/jpeg", "image/svg+xml", "image/webp"]
+        stripped = raw.strip()
+        if stripped.startswith("["):
+            try:
+                parsed = json.loads(stripped)
+                if isinstance(parsed, list):
+                    return [s.strip() for s in parsed if s.strip()]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return [t.strip() for t in raw.split(",") if t.strip()]
     
     export_temp_dir: str = Field(
         default="",
         description="Temp dir for exports (auto-detected if empty)"
     )
+
+    @field_validator("export_temp_dir", mode="after")
+    @classmethod
+    def _set_default_temp_dir(cls, v: str) -> str:
+        if not v or not v.strip():
+            return os.path.join(tempfile.gettempdir(), "diagram-exports")
+        return v
+
     export_max_width: int = 8192
     export_max_height: int = 8192
     export_default_dpi: int = 150
