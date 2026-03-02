@@ -75,7 +75,7 @@ function FlowEditorInner({ readOnly = false, projectId }: FlowEditorProps) {
   const currentTool = useAppStore(state => state.currentTool)
   const setCurrentTool = useAppStore(state => state.setCurrentTool)
   
-  const { screenToFlowPosition, fitView, getNode, getViewport } = useReactFlow()
+  const { screenToFlowPosition, fitView, getNode } = useReactFlow()
   
   // Clipboard state for copy/paste
   const [clipboard, setClipboard] = useState<FlowNode[]>([])

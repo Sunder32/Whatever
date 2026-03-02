@@ -67,10 +67,10 @@ func (h *AssetHandler) Upload(c *gin.Context) {
 	// Validate MIME type — use server-side detection only, never trust client header
 	mimeType := http.DetectContentType(data)
 	allowedMIME := map[string]bool{
-		"image/png":  true,
-		"image/jpeg": true,
-		"image/gif":  true,
-		"image/webp": true,
+		"image/png":     true,
+		"image/jpeg":    true,
+		"image/gif":     true,
+		"image/webp":    true,
 		"image/svg+xml": true,
 	}
 	// SVG is detected as text/xml by http.DetectContentType, check file extension
@@ -97,8 +97,8 @@ func (h *AssetHandler) Upload(c *gin.Context) {
 	if err == nil {
 		// Already exists — return existing
 		c.JSON(http.StatusOK, gin.H{
-			"success":    true,
-			"id":         existingID,
+			"success":      true,
+			"id":           existingID,
 			"deduplicated": true,
 		})
 		return

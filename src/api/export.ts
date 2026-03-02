@@ -1,4 +1,4 @@
-import { apiClient, API_BASE_URL } from './client'
+import { apiClient } from './client'
 import type { WtvFile } from '@/types'
 
 export type ExportFormat = 'png' | 'svg' | 'pdf'
@@ -41,7 +41,7 @@ export const exportApi = {
     }
 
     // Use apiClient for auth header, request blob via downloadable endpoint
-    const response = await apiClient.post('/export', requestData, { responseType: 'blob' }) as unknown as Blob
+    const response = await apiClient.post('/export', requestData) as unknown as Blob
     return response
   },
 
