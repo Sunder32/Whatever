@@ -88,6 +88,7 @@ interface ProjectStore {
   
   // Get filtered projects
   getOwnProjects: () => Project[]
+  getSharedProjects: () => Project[]
   getFollowingProjects: () => Project[]
   getStarredProjects: () => Project[]
   getProjectById: (id: string) => Project | undefined
@@ -572,6 +573,17 @@ export const useProjectStore = create<ProjectStore>()(
           p.ownerId === 'local' ||
           p.owner?.id === 'local'
         )
+      },
+
+      getSharedProjects: () => {
+        const user = useAuthStore.getState().user
+        if (!user) return []
+        return get().projects.filter(p => {
+          const isOwner = p.ownerId === user.id || p.owner?.id === user.id || p.ownerId === 'local' || p.owner?.id === 'local'
+          if (isOwner) return false
+          // User is a collaborator on this project
+          return p.collaborators?.some(c => c.userId === user.id)
+        })
       },
 
       getFollowingProjects: () => {

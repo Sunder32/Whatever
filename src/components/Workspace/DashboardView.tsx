@@ -52,6 +52,7 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
     following, 
     fetchProjects, 
     getOwnProjects,
+    getSharedProjects,
     getFollowingProjects,
     deleteProject,
     duplicateProject,
@@ -125,7 +126,7 @@ export function DashboardView({ onOpenProject, onNewProject, onNewProjectFromTem
     
     switch (feedFilter) {
       case 'own':
-        return getOwnProjects()
+        return [...getOwnProjects(), ...getSharedProjects()]
       case 'following':
         return getFollowingProjects()
       default:

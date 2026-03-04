@@ -21,6 +21,8 @@ interface UseCollaborationOptions {
   onElementDelete?: (data: Record<string, unknown>) => void
   onUserJoin?: (userId: string, userName: string) => void
   onUserLeave?: (userId: string) => void
+  onSyncRequest?: (fromUserId: string) => void
+  onSyncResponse?: (data: Record<string, unknown>) => void
 }
 
 export function useCollaboration(options: UseCollaborationOptions) {
@@ -36,6 +38,8 @@ export function useCollaboration(options: UseCollaborationOptions) {
     onElementDelete,
     onUserJoin,
     onUserLeave,
+    onSyncRequest,
+    onSyncResponse,
   } = options
 
   const cursorsRef = useRef<Map<string, Cursor>>(new Map())
@@ -96,7 +100,29 @@ export function useCollaboration(options: UseCollaborationOptions) {
       onUserLeave?.(leftUserId)
     })
 
-    cleanupRef.current = [unsubCursor, unsubElement, unsubCreate, unsubDelete, unsubJoin, unsubLeave]
+    // Listen for full-sync requests from new joiners
+    const unsubSyncReq = webSocketService.on('request_sync', (data: unknown) => {
+      const payload = data as { userId: string }
+      if (payload.userId !== userId) {
+        onSyncRequest?.(payload.userId)
+      }
+    })
+
+    // Listen for full-sync responses (when we join and someone sends us the state)
+    const unsubSyncResp = webSocketService.on('sync_response', (data: unknown) => {
+      const payload = data as Record<string, unknown>
+      if (payload.targetUserId === userId) {
+        onSyncResponse?.(payload)
+      }
+    })
+
+    cleanupRef.current = [unsubCursor, unsubElement, unsubCreate, unsubDelete, unsubJoin, unsubLeave, unsubSyncReq, unsubSyncResp]
+
+    // Request full sync from existing room members
+    webSocketService.send('request_sync', {
+      room: `schema:${schemaId}`,
+      userId,
+    })
 
     // Cleanup stale cursors every 5 seconds
     const cleanupInterval = setInterval(() => {
@@ -120,7 +146,7 @@ export function useCollaboration(options: UseCollaborationOptions) {
       cleanupRef.current.forEach(fn => fn())
       clearInterval(cleanupInterval)
     }
-  }, [enabled, schemaId, userId, userName, userColor, onCursorUpdate, onElementUpdate, onElementCreate, onElementDelete, onUserJoin, onUserLeave])
+  }, [enabled, schemaId, userId, userName, userColor, onCursorUpdate, onElementUpdate, onElementCreate, onElementDelete, onUserJoin, onUserLeave, onSyncRequest, onSyncResponse])
 
   const sendCursorPosition = useCallback((position: { x: number; y: number }) => {
     if (!enabled || !schemaId) return
@@ -137,6 +163,17 @@ export function useCollaboration(options: UseCollaborationOptions) {
     webSocketService.sendSelectionUpdate(selectedElements)
   }, [enabled, schemaId])
 
+  const sendSyncResponse = useCallback((targetUserId: string, nodes: unknown[], edges: unknown[]) => {
+    if (!enabled || !schemaId) return
+    webSocketService.send('sync_response', {
+      room: `schema:${schemaId}`,
+      targetUserId,
+      nodes,
+      edges,
+      userId,
+    })
+  }, [enabled, schemaId, userId])
+
   const lockElement = useCallback(async (elementId: string): Promise<boolean> => {
     if (!enabled || !schemaId) return false
     return webSocketService.lockElement(elementId)
@@ -152,6 +189,7 @@ export function useCollaboration(options: UseCollaborationOptions) {
     sendCursorPosition,
     sendElementUpdate,
     sendSelectionUpdate,
+    sendSyncResponse,
     lockElement,
     unlockElement,
   }

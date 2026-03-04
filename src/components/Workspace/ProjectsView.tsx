@@ -13,7 +13,8 @@ import {
   Trash2,
   Archive,
   Copy,
-  LayoutDashboard
+  LayoutDashboard,
+  Users
 } from 'lucide-react'
 import { useProjectStore, useAuthStore } from '@/stores'
 import { cn } from '@/utils'
@@ -36,7 +37,8 @@ export function ProjectsView({ onOpenProject, onNewProject }: ProjectsViewProps)
     archiveProject, 
     duplicateProject,
     toggleProjectVisibility,
-    getOwnProjects
+    getOwnProjects,
+    getSharedProjects
   } = useProjectStore()
   
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
@@ -52,6 +54,9 @@ export function ProjectsView({ onOpenProject, onNewProject }: ProjectsViewProps)
   
   // Get own projects
   const ownProjects = useMemo(() => getOwnProjects(), [projects, user])
+  
+  // Get shared projects (where user is collaborator but not owner)
+  const sharedProjects = useMemo(() => getSharedProjects(), [projects, user])
   
   // Filter and sort projects
   const filteredProjects = useMemo(() => {
@@ -410,6 +415,60 @@ export function ProjectsView({ onOpenProject, onNewProject }: ProjectsViewProps)
             </button>
           )}
         </div>
+      )}
+      
+      {/* Shared projects section */}
+      {sharedProjects.length > 0 && (
+        <>
+          <div className="flex items-center gap-2 mt-10 mb-4">
+            <Users size={20} className="text-primary" />
+            <h3 className="text-lg font-semibold">Доступные мне</h3>
+            <span className="text-sm text-muted-foreground">({sharedProjects.length})</span>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            {sharedProjects.map(project => (
+              <div
+                key={project.id}
+                className="group border rounded-lg overflow-hidden hover:border-primary/50 transition-colors cursor-pointer"
+                onClick={() => onOpenProject(project.id)}
+              >
+                {/* Thumbnail */}
+                <div className="aspect-video bg-secondary flex items-center justify-center relative">
+                  {project.thumbnailUrl ? (
+                    <img src={project.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="text-6xl text-muted-foreground/30"><LayoutDashboard size={60} /></div>
+                  )}
+                  <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-primary/80 text-primary-foreground text-xs">
+                    Общий доступ
+                  </div>
+                </div>
+                
+                {/* Content */}
+                <div className="p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <h3 className="font-medium group-hover:text-primary transition-colors">{project.name}</h3>
+                    {project.isPublic ? (
+                      <Globe size={14} className="text-muted-foreground" />
+                    ) : (
+                      <Lock size={14} className="text-muted-foreground" />
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground line-clamp-2 mb-2">{project.description}</p>
+                  {project.owner && (
+                    <p className="text-xs text-muted-foreground">Владелец: {project.owner.fullName || project.owner.username}</p>
+                  )}
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground mt-2">
+                    <span className="flex items-center gap-1">
+                      <Clock size={12} />
+                      {formatDate(project.updatedAt)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

@@ -167,13 +167,14 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
   },
 
   loadProjectFile: async (projectId: string) => {
-    // Try to load existing file for this project from IndexedDB first
+    // Try to load existing file for this project
     
     await indexedDB.init()
     
     const isAuthenticated = useAuthStore.getState().isAuthenticated
+    const currentUserId = useAuthStore.getState().user?.id
     
-    // First try to fetch from server if authenticated
+    // Always try to fetch from server first if authenticated
     if (isAuthenticated) {
       try {
         const result = await schemasApi.list(projectId, 1, 10)
@@ -238,10 +239,17 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
         historyIndex: -1 
       })
       
-      // If authenticated, save to server immediately
+      // Only save to server if this user is the project owner.
+      // For shared/collaborative projects, the owner's save creates the schema.
+      // Saving a blank file here for a collaborator would overwrite real content.
       if (isAuthenticated) {
         try {
-          await storageService.save(file)
+          const { projectsApi } = await import('@/api')
+          const projResp = await projectsApi.getById(projectId)
+          const isOwner = projResp.success && projResp.data && projResp.data.ownerId === currentUserId
+          if (isOwner) {
+            await storageService.save(file)
+          }
         } catch (error) {
           console.warn('Could not save new file to server:', error)
         }

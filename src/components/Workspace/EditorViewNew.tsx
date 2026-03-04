@@ -78,7 +78,7 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
   const handleElementUpdate = useCallback((elementId: string, changes: Record<string, unknown>) => {
     isRemoteRef.current = true
     try {
-      const { nodes } = useGraphStore.getState()
+      const { nodes, edges } = useGraphStore.getState()
       const existingNode = nodes.find(n => n.id === elementId)
       if (existingNode) {
         if (changes.position) {
@@ -88,6 +88,12 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
         delete dataChanges.position
         if (Object.keys(dataChanges).length > 0) {
           useGraphStore.getState().updateNode(elementId, dataChanges as any)
+        }
+      } else {
+        // Check if it's an edge update
+        const existingEdge = edges.find(e => e.id === elementId)
+        if (existingEdge) {
+          useGraphStore.getState().updateEdge(elementId, changes as any)
         }
       }
     } finally {
@@ -140,7 +146,38 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
     }
   }, [])
   
-  const { sendElementUpdate } = useCollaboration({
+  // Handle sync request: another user just joined and needs our current state
+  const handleSyncRequest = useCallback((fromUserId: string) => {
+    const { nodes, edges } = useGraphStore.getState()
+    // Only send if we have content to share
+    if (nodes.length > 0 || edges.length > 0) {
+      sendSyncResponseRef.current?.(fromUserId, nodes, edges)
+    }
+  }, [])
+
+  // Handle sync response: we just joined and received state from an existing user
+  const handleSyncResponse = useCallback((data: Record<string, unknown>) => {
+    const remoteNodes = data.nodes as FlowNode[] | undefined
+    const remoteEdges = data.edges as FlowEdge[] | undefined
+    if (!remoteNodes && !remoteEdges) return
+
+    isRemoteRef.current = true
+    try {
+      const { nodes: localNodes, edges: localEdges } = useGraphStore.getState()
+      // Only apply if we have less content than the remote (avoid overwriting owner's work)
+      if ((remoteNodes?.length || 0) > localNodes.length || (remoteEdges?.length || 0) > localEdges.length) {
+        if (remoteNodes) useGraphStore.setState({ nodes: remoteNodes })
+        if (remoteEdges) useGraphStore.setState({ edges: remoteEdges })
+      }
+    } finally {
+      isRemoteRef.current = false
+    }
+  }, [])
+
+  // Ref to pass sendSyncResponse into the callback without re-creating useCollaboration
+  const sendSyncResponseRef = useRef<((targetUserId: string, nodes: unknown[], edges: unknown[]) => void) | null>(null)
+
+  const { sendElementUpdate, sendSyncResponse } = useCollaboration({
     schemaId: projectId || null,
     userId: currentUser?.id || '',
     userName: currentUser?.fullName || currentUser?.username || 'Anonymous',
@@ -148,6 +185,8 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
     onElementUpdate: handleElementUpdate,
     onElementCreate: handleRemoteCreate,
     onElementDelete: handleRemoteDelete,
+    onSyncRequest: handleSyncRequest,
+    onSyncResponse: handleSyncResponse,
     onUserJoin: useCallback((userId: string) => {
       setOnlineUsers(prev => prev.includes(userId) ? prev : [...prev, userId])
     }, []),
@@ -155,6 +194,11 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
       setOnlineUsers(prev => prev.filter(id => id !== userId))
     }, []),
   })
+  
+  // Keep ref in sync
+  useEffect(() => {
+    sendSyncResponseRef.current = sendSyncResponse
+  }, [sendSyncResponse])
   
   // Subscribe to graph changes and broadcast via WebSocket
   useEffect(() => {

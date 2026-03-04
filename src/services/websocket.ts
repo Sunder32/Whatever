@@ -81,10 +81,21 @@ class WebSocketService {
 
         this.ws.onmessage = (event) => {
           try {
-            const message: WebSocketMessage = JSON.parse(event.data)
-            this.handleMessage(message)
+            // The Go backend may batch multiple JSON messages into a single
+            // WebSocket frame separated by newlines (writePump optimization).
+            // Split on newlines and parse each message individually.
+            const raw = event.data as string
+            const parts = raw.split('\n').filter(Boolean)
+            for (const part of parts) {
+              try {
+                const message: WebSocketMessage = JSON.parse(part)
+                this.handleMessage(message)
+              } catch (innerError) {
+                console.error('Failed to parse WebSocket message part:', innerError)
+              }
+            }
           } catch (error) {
-            console.error('Failed to parse WebSocket message:', error)
+            console.error('Failed to process WebSocket message:', error)
           }
         }
 
