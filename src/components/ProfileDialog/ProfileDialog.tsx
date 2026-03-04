@@ -293,14 +293,6 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     onClose()
   }
   
-  const formatBytes = (bytes: number): string => {
-    if (bytes === 0) return '0 Б'
-    const k = 1024
-    const sizes = ['Б', 'КБ', 'МБ', 'ГБ']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-  }
-  
   if (!isOpen) return null
   
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
