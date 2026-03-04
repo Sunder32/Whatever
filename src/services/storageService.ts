@@ -1,4 +1,5 @@
 import { schemasApi } from '@/api'
+import { apiClient } from '@/api/client'
 import type { WtvFile } from '@/types'
 
 export type StorageMode = 'cloud' | 'saving' | 'error' | 'offline'
@@ -9,16 +10,9 @@ interface StorageState {
   lastSaveAt: string | null
 }
 
-// Helper to check authentication
+// Helper to check authentication — use apiClient which tracks access token
 function isAuthenticated(): boolean {
-  try {
-    const authData = localStorage.getItem('auth-storage')
-    if (!authData) return false
-    const parsed = JSON.parse(authData)
-    return parsed?.state?.isAuthenticated === true
-  } catch {
-    return false
-  }
+  return apiClient.isAuthenticated()
 }
 
 class StorageService {
@@ -135,7 +129,17 @@ class StorageService {
         if (createResult.success && createResult.data) {
           const serverId = createResult.data.id
           if (serverId !== file.id) {
+            // Update the file id in the Zustand store so future saves use the server-assigned id
             file.id = serverId
+            try {
+              const { useDiagramStore } = await import('@/stores')
+              const currentFile = useDiagramStore.getState().file
+              if (currentFile && currentFile.projectId === file.projectId) {
+                useDiagramStore.getState().loadFile({ ...currentFile, id: serverId })
+              }
+            } catch {
+              // Ignore store update errors
+            }
           }
         }
       }
