@@ -83,7 +83,7 @@ export interface Collaborator {
   id: string
   projectId: string
   userId: string
-  role: 'owner' | 'editor' | 'viewer'
+  role: 'owner' | 'admin' | 'write' | 'read'
   permissions: Record<string, boolean>
   createdAt: string
   acceptedAt?: string

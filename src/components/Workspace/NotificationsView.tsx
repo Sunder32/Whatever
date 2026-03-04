@@ -27,7 +27,7 @@ interface Notification {
   targetId?: string
   message?: string
   timestamp: string
-  role?: 'editor' | 'viewer'
+  role?: 'read' | 'write' | 'admin'
 }
 
 export function NotificationsView() {
@@ -179,7 +179,7 @@ export function NotificationsView() {
                   {notification.type === 'fork' && 'форкнул(а)'}
                   {notification.type === 'follow' && 'подписался(ась) на вас'}
                   {notification.type === 'comment' && 'прокомментировал(а)'}
-                  {notification.type === 'invite' && `пригласил(а) вас как ${notification.role === 'editor' ? 'редактора' : 'наблюдателя'} в проект`}
+                  {notification.type === 'invite' && `пригласил(а) вас как ${notification.role === 'write' ? 'редактора' : notification.role === 'admin' ? 'администратора' : 'наблюдателя'} в проект`}
                 </span>
                 {notification.target && (
                   <>

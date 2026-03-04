@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Workspace, AuthDialog } from '@/components'
 import { useAuthStore, useAppStore } from '@/stores'
 import { useOnlineStatus } from '@/hooks'
-import { indexedDB, syncManager, storageService } from '@/services'
+import { storageService } from '@/services'
 
 // Toast notification component for API errors
 function ToastNotification({ message, type, onClose }: { message: string; type: 'error' | 'warning'; onClose: () => void }) {
@@ -53,16 +53,7 @@ export default function App() {
   // Initialize services on mount
   useEffect(() => {
     const initServices = async () => {
-      await indexedDB.init()
       await storageService.init()
-      
-      syncManager.init({
-        autoSync: true,
-        syncInterval: 30000,
-        onStatusChange: (status) => {
-          useAppStore.getState().setSyncing(status === 'syncing')
-        },
-      })
       
       // Check auth and wait for result
       await checkAuth()
@@ -73,7 +64,6 @@ export default function App() {
     initServices()
     
     return () => {
-      syncManager.destroy()
       storageService.destroy()
     }
   }, []) // Remove checkAuth from deps to avoid re-running

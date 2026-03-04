@@ -13,7 +13,6 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  HardDrive,
   FileDown
 } from 'lucide-react'
 import { 
@@ -50,7 +49,7 @@ export function EditorView({ projectId, onBack }: EditorViewProps) {
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 })
-  const [storageMode, setStorageMode] = useState<'local' | 'cloud' | 'syncing'>('local')
+  const [storageMode, setStorageMode] = useState<'cloud' | 'saving' | 'error' | 'offline'>('cloud')
   const [isDragOver, setIsDragOver] = useState(false)
   const dragCounter = useRef(0)
   const canvasContainerRef = useRef<HTMLDivElement>(null)
@@ -292,8 +291,9 @@ export function EditorView({ projectId, onBack }: EditorViewProps) {
           {/* Sync status */}
           <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-secondary/50 text-sm">
             {storageMode === 'cloud' && <Cloud size={14} className="text-green-500" />}
-            {storageMode === 'local' && <HardDrive size={14} className="text-yellow-500" />}
-            {storageMode === 'syncing' && <Loader2 size={14} className="animate-spin text-blue-500" />}
+            {storageMode === 'saving' && <Loader2 size={14} className="animate-spin text-blue-500" />}
+            {storageMode === 'error' && <CloudOff size={14} className="text-red-500" />}
+            {storageMode === 'offline' && <CloudOff size={14} className="text-amber-500" />}
             {isSyncing ? (
               <Loader2 size={14} className="animate-spin" />
             ) : isOnline ? (

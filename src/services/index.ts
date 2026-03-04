@@ -1,5 +1,3 @@
-export { indexedDB } from './indexedDB'
-export { syncManager, type SyncStatus } from './syncManager'
 export { webSocketService, getWebSocketUrl } from './websocket'
 export { storageService, type StorageMode } from './storageService'
 export { eventBus, AppEvents, type EventPayloads } from './eventBus'

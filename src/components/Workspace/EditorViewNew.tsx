@@ -13,7 +13,6 @@ import {
   Cloud,
   CloudOff,
   Loader2,
-  HardDrive,
   Command,
   Eye
 } from 'lucide-react'
@@ -63,7 +62,7 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
   const [layersPanelOpen, setLayersPanelOpen] = useState(false)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [shareOpen, setShareOpen] = useState(false)
-  const [storageMode, setStorageMode] = useState<'local' | 'cloud' | 'syncing'>('local')
+  const [storageMode, setStorageMode] = useState<'cloud' | 'saving' | 'error' | 'offline'>('cloud')
   const [isEditingName, setIsEditingName] = useState(false)
   const [editNameValue, setEditNameValue] = useState('')
   
@@ -651,8 +650,9 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
           {/* Sync status indicator */}
           <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-secondary/30 text-xs">
             {storageMode === 'cloud' && <Cloud size={12} className="text-green-500" />}
-            {storageMode === 'local' && <HardDrive size={12} className="text-yellow-500" />}
-            {storageMode === 'syncing' && <Loader2 size={12} className="animate-spin text-blue-500" />}
+            {storageMode === 'saving' && <Loader2 size={12} className="animate-spin text-blue-500" />}
+            {storageMode === 'error' && <CloudOff size={12} className="text-red-500" />}
+            {storageMode === 'offline' && <CloudOff size={12} className="text-amber-500" />}
             {isSyncing ? (
               <Loader2 size={12} className="animate-spin" />
             ) : isOnline ? (

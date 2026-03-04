@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { v4 as uuidv4 } from 'uuid'
 import { eventBus, AppEvents } from '@/services/eventBus'
-import { indexedDB, storageService } from '@/services'
+import { storageService } from '@/services'
 import { schemasApi } from '@/api'
 import { useAuthStore } from '@/stores/authStore'
 import type { 
@@ -167,19 +167,15 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
   },
 
   loadProjectFile: async (projectId: string) => {
-    // Try to load existing file for this project
-    
-    await indexedDB.init()
-    
-    const isAuthenticated = useAuthStore.getState().isAuthenticated
+    const isAuth = useAuthStore.getState().isAuthenticated
     const currentUserId = useAuthStore.getState().user?.id
     
-    // Always try to fetch from server first if authenticated
-    if (isAuthenticated) {
+    // Always fetch from the server (cloud-first)
+    if (isAuth) {
       try {
         const result = await schemasApi.list(projectId, 1, 10)
         if (result.success && result.data && result.data.length > 0) {
-          // Found schema on server - use it
+          // Found schema on server — use it
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const serverSchema = result.data[0] as any
           const file: WtvFile = {
@@ -207,9 +203,6 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
             encryption: { encrypted: false, method: '' },
           }
           
-          // Save to IndexedDB for offline access
-          await indexedDB.saveFile(file, false)
-          
           set({ 
             file, 
             history: [], 
@@ -218,41 +211,29 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
           return
         }
       } catch (error) {
-        console.warn('Could not fetch schema from server, falling back to local:', error)
+        console.warn('Could not fetch schema from server:', error)
       }
     }
     
-    // Try local IndexedDB
-    const existingFile = await indexedDB.getFileByProject(projectId)
-    if (existingFile) {
-      set({ 
-        file: existingFile, 
-        history: [], 
-        historyIndex: -1 
-      })
-    } else {
-      // Create new file for this project
-      const file = createEmptyFile(`Проект`, projectId)
-      set({ 
-        file, 
-        history: [], 
-        historyIndex: -1 
-      })
-      
-      // Only save to server if this user is the project owner.
-      // For shared/collaborative projects, the owner's save creates the schema.
-      // Saving a blank file here for a collaborator would overwrite real content.
-      if (isAuthenticated) {
-        try {
-          const { projectsApi } = await import('@/api')
-          const projResp = await projectsApi.getById(projectId)
-          const isOwner = projResp.success && projResp.data && projResp.data.ownerId === currentUserId
-          if (isOwner) {
-            await storageService.save(file)
-          }
-        } catch (error) {
-          console.warn('Could not save new file to server:', error)
+    // No schema on server — create an empty file
+    const file = createEmptyFile('Проект', projectId)
+    set({ 
+      file, 
+      history: [], 
+      historyIndex: -1 
+    })
+    
+    // Only save the empty file to server if this user is the project owner
+    if (isAuth) {
+      try {
+        const { projectsApi } = await import('@/api')
+        const projResp = await projectsApi.getById(projectId)
+        const isOwner = projResp.success && projResp.data && projResp.data.ownerId === currentUserId
+        if (isOwner) {
+          await storageService.save(file)
         }
+      } catch (error) {
+        console.warn('Could not save new file to server:', error)
       }
     }
   },

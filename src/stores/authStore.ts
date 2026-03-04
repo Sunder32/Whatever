@@ -131,10 +131,6 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem('project-storage')
           localStorage.removeItem('auth-storage')
           localStorage.removeItem('app-storage')
-          
-          // Clear IndexedDB
-          const { indexedDB } = await import('@/services')
-          await indexedDB.clearAll()
         }
       },
 

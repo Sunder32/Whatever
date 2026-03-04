@@ -17,7 +17,7 @@ export interface ProjectCollaborator {
   username: string
   fullName: string
   avatarUrl?: string
-  role: 'editor' | 'viewer'
+  role: 'read' | 'write' | 'admin'
   addedAt: string
 }
 
@@ -26,7 +26,7 @@ export interface ProjectInvitation {
   projectId: string
   projectName: string
   invitedBy: ProjectOwner
-  role: 'editor' | 'viewer'
+  role: 'read' | 'write' | 'admin'
   createdAt: string
   status: 'pending' | 'accepted' | 'declined'
 }
@@ -71,9 +71,10 @@ interface ProjectStore {
   generateShareLink: (id: string) => Promise<string>
   
   // Collaborators
-  addCollaborator: (projectId: string, email: string, role: 'editor' | 'viewer') => Promise<void>
+  addCollaborator: (projectId: string, email: string, role: 'read' | 'write' | 'admin') => Promise<void>
   removeCollaborator: (projectId: string, userId: string) => Promise<void>
-  updateCollaboratorRole: (projectId: string, userId: string, role: 'editor' | 'viewer') => Promise<void>
+  updateCollaboratorRole: (projectId: string, userId: string, role: 'read' | 'write' | 'admin') => Promise<void>
+  fetchCollaborators: (projectId: string) => Promise<void>
   
   // Invitations
   fetchInvitations: () => Promise<void>
@@ -132,6 +133,32 @@ export const useProjectStore = create<ProjectStore>()(
               isArchived: p.isArchived || false,
             })) as Project[]
             set({ projects, isLoading: false })
+            
+            // Fetch collaborators for each project in background
+            const { collaborationApi } = await import('@/api')
+            for (const project of projects) {
+              try {
+                const collaborators = await collaborationApi.getCollaborators(project.id)
+                const mapped: ProjectCollaborator[] = collaborators.map(c => ({
+                  id: c.id,
+                  userId: c.userId,
+                  username: c.email?.split('@')[0] || c.name || '',
+                  fullName: c.name || '',
+                  avatarUrl: c.avatar,
+                  role: c.permission as 'read' | 'write' | 'admin',
+                  addedAt: c.createdAt || new Date().toISOString(),
+                }))
+                if (mapped.length > 0) {
+                  set(state => ({
+                    projects: state.projects.map(p => 
+                      p.id === project.id ? { ...p, collaborators: mapped } : p
+                    )
+                  }))
+                }
+              } catch {
+                // Ignore individual collaborator fetch failures
+              }
+            }
           } else {
             throw new Error(response.error || 'Failed to fetch projects')
           }
@@ -381,8 +408,7 @@ export const useProjectStore = create<ProjectStore>()(
         try {
           // Use collaborationApi which sends { email, permission } matching the Go backend
           const { collaborationApi } = await import('@/api')
-          const permission = role === 'editor' ? 'write' : 'read'
-          const result = await collaborationApi.addCollaborator(projectId, { email, permission })
+          const result = await collaborationApi.addCollaborator(projectId, { email, permission: role })
           
           // Update with real server data
           if (result) {
@@ -449,15 +475,36 @@ export const useProjectStore = create<ProjectStore>()(
         }))
         
         try {
-          const permissionMap: Record<string, 'read' | 'write' | 'admin'> = {
-            viewer: 'read',
-            editor: 'write',
-            admin: 'admin',
-          }
-          await projectsApi.updateCollaborator(projectId, userId, { permission: permissionMap[role] || 'read' })
+          await projectsApi.updateCollaborator(projectId, userId, { permission: role })
         } catch (err) {
           console.error('Failed to update collaborator role:', err)
           set({ error: 'Не удалось обновить роль участника' })
+        }
+      },
+
+      fetchCollaborators: async (projectId) => {
+        try {
+          const { collaborationApi } = await import('@/api')
+          const collaborators = await collaborationApi.getCollaborators(projectId)
+          
+          // Map backend CollaboratorInfo to our ProjectCollaborator format
+          const mapped: ProjectCollaborator[] = collaborators.map(c => ({
+            id: c.id,
+            userId: c.userId,
+            username: c.email?.split('@')[0] || c.name || '',
+            fullName: c.name || '',
+            avatarUrl: c.avatar,
+            role: c.permission as 'read' | 'write' | 'admin',
+            addedAt: c.createdAt || new Date().toISOString(),
+          }))
+          
+          set(state => ({
+            projects: state.projects.map(p => 
+              p.id === projectId ? { ...p, collaborators: mapped } : p
+            )
+          }))
+        } catch (err) {
+          console.error('Failed to fetch collaborators:', err)
         }
       },
 
@@ -626,7 +673,7 @@ export const useProjectStore = create<ProjectStore>()(
         // Владелец или коллаборатор с правами editor
         const isOwner = project.ownerId === user.id || project.owner?.id === user.id
         const isEditor = project.collaborators?.some(
-          c => c.userId === user.id && c.role === 'editor'
+          c => c.userId === user.id && (c.role === 'write' || c.role === 'admin')
         )
         return isOwner || isEditor || false
       },

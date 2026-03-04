@@ -27,9 +27,8 @@ import {
 } from 'lucide-react'
 import { useAuthStore, useProjectStore } from '@/stores'
 import { authApi } from '@/api'
-import { indexedDB, storageService } from '@/services'
+import { storageService } from '@/services'
 import { cn } from '@/utils'
-import type { WtvFile } from '@/types'
 
 interface ProfileDialogProps {
   isOpen: boolean
@@ -176,7 +175,6 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
   const { user, updateProfile, logout } = useAuthStore()
   const { getOwnProjects } = useProjectStore()
   const [activeTab, setActiveTab] = useState<TabType>('overview')
-  const [localFiles, setLocalFiles] = useState<WtvFile[]>([])
   const [storageState, setStorageState] = useState(storageService.getState())
   
   // Profile editing states
@@ -234,16 +232,10 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
   
   useEffect(() => {
     if (isOpen) {
-      loadLocalFiles()
       const unsubscribe = storageService.subscribe(setStorageState)
       return () => unsubscribe()
     }
   }, [isOpen])
-  
-  const loadLocalFiles = async () => {
-    const files = await indexedDB.getAllFiles()
-    setLocalFiles(files)
-  }
   
   const handleSaveProfile = async () => {
     setIsSaving(true)
@@ -296,11 +288,6 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     setIsSaving(false)
   }
   
-  const handleSyncNow = async () => {
-    await storageService.syncToCloud()
-    setMessage({ type: 'success', text: 'Синхронизация завершена' })
-  }
-  
   const handleLogout = () => {
     logout()
     onClose()
@@ -313,8 +300,6 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     const i = Math.floor(Math.log(bytes) / Math.log(k))
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
   }
-  
-  const totalLocalSize = localFiles.reduce((acc, file) => acc + (file.metadata.fileSize || 0), 0)
   
   if (!isOpen) return null
   
@@ -404,7 +389,7 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
                 <div className="text-muted-foreground text-xs">публичных</div>
               </div>
               <div className="text-center">
-                <div className="font-bold">{localFiles.length}</div>
+                <div className="font-bold">{ownProjects.length}</div>
                 <div className="text-muted-foreground text-xs">файлов</div>
               </div>
             </div>
@@ -717,85 +702,66 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
             
             {activeTab === 'storage' && (
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-lg bg-secondary/50 border">
-                    <div className="flex items-center gap-3 mb-3">
-                      <HardDrive size={20} className="text-blue-500" />
-                      <span className="font-medium">Локальное хранилище</span>
-                    </div>
-                    <p className="text-2xl font-bold">{formatBytes(totalLocalSize)}</p>
-                    <p className="text-sm text-muted-foreground">{localFiles.length} файлов</p>
-                  </div>
-                  
+                <div className="grid grid-cols-1 gap-4">
                   <div className="p-4 rounded-lg bg-secondary/50 border">
                     <div className="flex items-center gap-3 mb-3">
                       <Cloud size={20} className="text-green-500" />
                       <span className="font-medium">Облачное хранилище</span>
                     </div>
                     <p className="text-2xl font-bold">
-                      {storageState.mode === 'cloud' ? 'Подключено' : 'Офлайн'}
+                      {storageState.mode === 'cloud' ? 'Подключено' : 
+                       storageState.mode === 'saving' ? 'Сохранение...' :
+                       storageState.mode === 'error' ? 'Ошибка' : 'Офлайн'}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      {storageState.pendingChanges > 0 
-                        ? `${storageState.pendingChanges} изменений ожидают синхронизации`
-                        : 'Все синхронизировано'
-                      }
+                      {storageState.isOnline ? 'Все данные хранятся в облаке' : 'Нет подключения к серверу'}
                     </p>
                   </div>
                 </div>
                 
                 <div>
-                  <h3 className="text-sm font-medium mb-3">Статус синхронизации</h3>
+                  <h3 className="text-sm font-medium mb-3">Статус</h3>
                   <div className="p-4 rounded-lg bg-secondary/50 border">
                     <div className="flex items-center justify-between mb-3">
                       <span>Режим:</span>
                       <span className={cn(
                         'px-2 py-1 rounded text-xs font-medium',
                         storageState.mode === 'cloud' && 'bg-green-500/20 text-green-500',
-                        storageState.mode === 'local' && 'bg-yellow-500/20 text-yellow-500',
-                        storageState.mode === 'syncing' && 'bg-blue-500/20 text-blue-500',
+                        storageState.mode === 'saving' && 'bg-blue-500/20 text-blue-500',
+                        storageState.mode === 'error' && 'bg-red-500/20 text-red-500',
+                        storageState.mode === 'offline' && 'bg-yellow-500/20 text-yellow-500',
                       )}>
                         {storageState.mode === 'cloud' && 'Облако'}
-                        {storageState.mode === 'local' && 'Локально'}
-                        {storageState.mode === 'syncing' && 'Синхронизация...'}
+                        {storageState.mode === 'saving' && 'Сохранение...'}
+                        {storageState.mode === 'error' && 'Ошибка'}
+                        {storageState.mode === 'offline' && 'Офлайн'}
                       </span>
                     </div>
                     
-                    {storageState.lastSyncAt && (
+                    {storageState.lastSaveAt && (
                       <p className="text-sm text-muted-foreground">
-                        Последняя синхронизация: {new Date(storageState.lastSyncAt).toLocaleString('ru-RU')}
+                        Последнее сохранение: {new Date(storageState.lastSaveAt).toLocaleString('ru-RU')}
                       </p>
                     )}
-                    
-                    <button
-                      onClick={handleSyncNow}
-                      disabled={storageState.mode === 'syncing' || !storageState.isOnline}
-                      className="mt-3 w-full px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                    >
-                      Синхронизировать сейчас
-                    </button>
                   </div>
                 </div>
                 
                 <div>
-                  <h3 className="text-sm font-medium mb-3">Локальные файлы</h3>
+                  <h3 className="text-sm font-medium mb-3">Проекты</h3>
                   <div className="space-y-2 max-h-48 overflow-auto">
-                    {localFiles.map(file => (
-                      <div key={file.id} className="p-3 rounded-lg bg-secondary/50 flex items-center justify-between">
+                    {ownProjects.map(project => (
+                      <div key={project.id} className="p-3 rounded-lg bg-secondary/50 flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-medium">{file.metadata.name}</p>
+                          <p className="text-sm font-medium">{project.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            {new Date(file.metadata.modified).toLocaleString('ru-RU')}
+                            {new Date(project.updatedAt).toLocaleString('ru-RU')}
                           </p>
                         </div>
-                        <span className="text-xs text-muted-foreground">
-                          {formatBytes(file.metadata.fileSize || 0)}
-                        </span>
                       </div>
                     ))}
-                    {localFiles.length === 0 && (
+                    {ownProjects.length === 0 && (
                       <p className="text-sm text-muted-foreground text-center py-4">
-                        Нет сохранённых файлов
+                        Нет проектов
                       </p>
                     )}
                   </div>
