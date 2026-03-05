@@ -175,9 +175,14 @@ export const useDiagramStore = create<DiagramState>()((set: SetState, get: GetSt
       try {
         const result = await schemasApi.list(projectId, 1, 10)
         if (result.success && result.data && result.data.length > 0) {
-          // Found schema on server — use it
+          // List endpoint returns only metadata (no content/canvasState).
+          // Fetch the full schema by ID to get content & canvasState.
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const serverSchema = result.data[0] as any
+          const schemaStub = result.data[0] as any
+          const fullResult = await schemasApi.getById(schemaStub.id)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const serverSchema = (fullResult.success && fullResult.data ? fullResult.data : schemaStub) as any
+          
           const file: WtvFile = {
             id: serverSchema.id,
             projectId: serverSchema.projectId,
