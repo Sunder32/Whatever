@@ -371,6 +371,7 @@ function FlowEditorInner({ readOnly = false, projectId }: FlowEditorProps) {
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
         elementsSelectable={!readOnly}
+        deleteKeyCode={null}
         snapToGrid={!readOnly && snapToGrid}
         snapGrid={[gridSize, gridSize]}
         panOnDrag={currentTool === 'pan' || currentTool === 'select'}

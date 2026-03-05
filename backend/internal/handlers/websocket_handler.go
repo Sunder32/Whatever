@@ -36,8 +36,8 @@ func init() {
 }
 
 var upgrader = websocket.Upgrader{
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+	ReadBufferSize:  4096,
+	WriteBufferSize: 4096,
 	CheckOrigin: func(r *http.Request) bool {
 		// Origin check is relaxed because JWT authentication is enforced
 		// by the WebSocketAuth middleware before the upgrade happens.
@@ -327,7 +327,7 @@ func (c *Client) readPump() {
 		c.conn.Close()
 	}()
 
-	c.conn.SetReadLimit(65536)
+	c.conn.SetReadLimit(2 * 1024 * 1024) // 2 MB — images can be large
 	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 	c.conn.SetPongHandler(func(string) error {
 		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))

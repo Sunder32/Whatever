@@ -108,7 +108,50 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
         const node = data.node as FlowNode
         const { nodes } = useGraphStore.getState()
         if (!nodes.find(n => n.id === node.id)) {
-          useGraphStore.setState({ nodes: [...nodes, node] })
+          // If this is an image node without imageData, reload the schema
+          // from the server to get the full content (images are too large for WebSocket).
+          if (data.isImageNode && (!node.data?.imageData)) {
+            useGraphStore.setState({ nodes: [...nodes, node] })
+            // Trigger reload from server to get image data
+            setTimeout(async () => {
+              try {
+                const { schemasApi } = await import('@/api')
+                const { useDiagramStore } = await import('@/stores')
+                const currentFile = useDiagramStore.getState().file
+                if (currentFile?.id) {
+                  const result = await schemasApi.getById(currentFile.id)
+                  if (result.success && result.data) {
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    const serverSchema = result.data as any
+                    if (serverSchema.content?.nodes) {
+                      // Find the image node in server data
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const serverNode = serverSchema.content.nodes.find((n: any) => n.id === node.id)
+                      if (serverNode?.imageData) {
+                        isRemoteRef.current = true
+                        try {
+                          const latestNodes = useGraphStore.getState().nodes
+                          useGraphStore.setState({
+                            nodes: latestNodes.map(n =>
+                              n.id === node.id
+                                ? { ...n, data: { ...n.data, imageData: serverNode.imageData } }
+                                : n
+                            )
+                          })
+                        } finally {
+                          isRemoteRef.current = false
+                        }
+                      }
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn('Failed to reload image data from server:', e)
+              }
+            }, 2000) // Wait 2s for the sender's save to complete
+          } else {
+            useGraphStore.setState({ nodes: [...nodes, node] })
+          }
         }
       }
       if (data.edge) {
@@ -215,11 +258,39 @@ export function EditorViewNew({ projectId, templateType, onBack }: EditorViewPro
         // New nodes → broadcast element_create
         for (const node of state.nodes) {
           if (!prevMap.has(node.id)) {
+            // Strip large binary data (imageData) from WebSocket broadcast
+            // to avoid exceeding message limits. Image nodes are synced via
+            // save + reload on the other client.
+            const broadcastNode = node.data?.imageData
+              ? { ...node, data: { ...node.data, imageData: undefined } }
+              : node
+            const isImageNode = !!node.data?.imageData
             webSocketService.send('element_create', {
               room: `schema:${projectId}`,
-              node,
+              node: broadcastNode,
+              isImageNode,
               userId: currentUser.id,
             })
+            // For image nodes, trigger immediate save so the other user
+            // can fetch the full image data from the server.
+            if (isImageNode) {
+              ;(async () => {
+                try {
+                  const { syncFlowToWtvFile } = await import('@/utils/diagramAdapter')
+                  const diagStore = (await import('@/stores')).useDiagramStore.getState()
+                  const graphState = useGraphStore.getState()
+                  if (diagStore.file) {
+                    const updatedFile = syncFlowToWtvFile(
+                      diagStore.file, graphState.nodes, graphState.edges, graphState.viewport
+                    )
+                    diagStore.loadFile(updatedFile)
+                    storageService.saveImmediate(updatedFile)
+                  }
+                } catch (e) {
+                  console.warn('Failed to immediately save image node:', e)
+                }
+              })()
+            }
           }
         }
         
