@@ -37,7 +37,7 @@ func main() {
 		migrationsDir = "./migrations"
 	}
 	if err := repository.RunMigrations(pool, migrationsDir); err != nil {
-		log.Printf("Warning: Migration error (may be expected if already applied): %v", err)
+		log.Fatalf("Migration error: %v", err)
 	}
 
 	userRepo := repository.NewUserRepository(pool)

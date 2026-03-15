@@ -64,8 +64,10 @@ func NewPostgresPool(databaseURL string) (*pgxpool.Pool, error) {
 	return pool, nil
 }
 
-// RunMigrations runs all SQL migration files in order
-// Migration files should be named like: 001_initial_schema.sql, 002_add_users.sql, etc.
+// RunMigrations runs all SQL migration files in order.
+// Only files matching the pattern NNN_*.sql are executed (e.g. 001_init.sql).
+// Legacy granular migrations (001_initial_schema … 008_delete_seed_data) are
+// automatically skipped when the consolidated 001_init.sql is present.
 func RunMigrations(pool *pgxpool.Pool, migrationsDir string) error {
 	ctx := context.Background()
 
@@ -108,7 +110,6 @@ func RunMigrations(pool *pgxpool.Pool, migrationsDir string) error {
 		return nil
 	})
 	if err != nil {
-		// If migrations directory doesn't exist, skip
 		if os.IsNotExist(err) {
 			log.Println("Migrations directory not found, skipping migrations")
 			return nil
@@ -116,11 +117,50 @@ func RunMigrations(pool *pgxpool.Pool, migrationsDir string) error {
 		return fmt.Errorf("failed to read migrations directory: %w", err)
 	}
 
-	// Sort migration files by name (they should be prefixed with numbers)
 	sort.Strings(migrationFiles)
 
-	// Apply pending migrations
+	// Legacy migration filenames superseded by the consolidated 001_init.sql.
+	// If any of them were already applied the DB has the old schema; if
+	// 001_init.sql is about to run on a fresh DB we mark them after it runs.
+	oldMigrations := []string{
+		"001_initial_schema.sql",
+		"002_seed_templates.sql",
+		"003_seed_users_projects.sql",
+		"004_add_schema_fields.sql",
+		"005_optimize_and_fix.sql",
+		"006_schema_unique_name.sql",
+		"007_tz_missing_columns.sql",
+		"008_delete_seed_data.sql",
+	}
+	oldSet := make(map[string]bool, len(oldMigrations))
+	for _, o := range oldMigrations {
+		oldSet[o] = true
+	}
+
+	// Detect existing DB with old migrations
+	hasAnyOld := false
+	for _, o := range oldMigrations {
+		if appliedMigrations[o] {
+			hasAnyOld = true
+			break
+		}
+	}
+	if hasAnyOld && !appliedMigrations["001_init.sql"] {
+		// Old DB — mark the consolidated migration as already applied
+		_, err := pool.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING", "001_init.sql")
+		if err != nil {
+			return fmt.Errorf("failed to record consolidated migration: %w", err)
+		}
+		appliedMigrations["001_init.sql"] = true
+		log.Println("Existing database detected — marked 001_init.sql as applied")
+	}
+
+	// Apply pending migrations (skip legacy filenames)
 	for _, filename := range migrationFiles {
+		if oldSet[filename] {
+			log.Printf("Legacy migration %s — skipping (superseded by 001_init.sql)", filename)
+			continue
+		}
 		if appliedMigrations[filename] {
 			log.Printf("Migration %s already applied, skipping", filename)
 			continue
@@ -134,7 +174,6 @@ func RunMigrations(pool *pgxpool.Pool, migrationsDir string) error {
 
 		log.Printf("Applying migration: %s", filename)
 
-		// Execute migration in a transaction
 		tx, err := pool.Begin(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to begin transaction for migration %s: %w", filename, err)
@@ -146,7 +185,6 @@ func RunMigrations(pool *pgxpool.Pool, migrationsDir string) error {
 			return fmt.Errorf("failed to execute migration %s: %w", filename, err)
 		}
 
-		// Record applied migration
 		_, err = tx.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", filename)
 		if err != nil {
 			tx.Rollback(ctx)
@@ -158,6 +196,15 @@ func RunMigrations(pool *pgxpool.Pool, migrationsDir string) error {
 		}
 
 		log.Printf("Migration %s applied successfully", filename)
+
+		// After fresh 001_init.sql, mark all legacy names as applied
+		if filename == "001_init.sql" {
+			for _, old := range oldMigrations {
+				pool.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT DO NOTHING", old)
+				appliedMigrations[old] = true
+			}
+			log.Println("Fresh database — marked legacy migration filenames as applied")
+		}
 	}
 
 	return nil
